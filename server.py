@@ -1,4 +1,4 @@
-"""RecallAI web server: phone GPS relay, search page, Claude agent, alerts.
+"""RecallAI web server: phone GPS relay, search page, Grok agent, alerts.
 
     uvicorn server:app --host 0.0.0.0 --port 8000
 """
@@ -44,8 +44,8 @@ agent = RecallAgent(tools=MemoryTools(gps_provider=fresh_gps))
 @asynccontextmanager
 async def lifespan(app):
     Watcher(gps_provider=fresh_gps, interval=WATCH_INTERVAL).start()
-    print("Claude agent:", "ON" if agent.enabled
-          else "off (set ANTHROPIC_API_KEY to enable)")
+    print("Grok agent:", "ON" if agent.enabled
+          else "off (set XAI_API_KEY to enable)")
     yield
 
 
@@ -94,16 +94,16 @@ def get_latest_gps():
 
 
 # ---------------------------------------------------------------------------
-# Claude agent
+# Grok agent
 # ---------------------------------------------------------------------------
 @app.post("/api/ask")
 async def ask(q: Question):
-    """Natural-language question about your belongings -> Claude's answer."""
+    """Natural-language question about your belongings -> Grok's answer."""
     try:
         return await run_in_threadpool(
             agent.ask, q.question, [t.model_dump() for t in q.history], q.timezone)
     except Exception as e:
-        raise HTTPException(502, f"Claude request failed: {e}")
+        raise HTTPException(502, f"Grok request failed: {e}")
 
 
 # ---------------------------------------------------------------------------

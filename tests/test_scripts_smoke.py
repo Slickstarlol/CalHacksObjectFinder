@@ -21,6 +21,9 @@ class FakeCamera:
     def isOpened(self):
         return True
 
+    def set(self, *a):
+        return True
+
     def read(self):
         return (True, self.frames.pop(0)) if self.frames else (False, None)
 

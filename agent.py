@@ -1,10 +1,10 @@
-"""RecallAI agent: ask Claude about your belongings in plain language.
+"""RecallAI agent: ask Grok about your belongings in plain language.
 
     "Where did I leave my mouse?"
     "Was my bag with me at lunch?"
     "What did I have on the hackathon table this morning?"
 
-Claude answers by calling tools over the sightings database (and can look
+Grok answers by calling tools over the sightings database (and can look
 at the snapshots themselves), then says where to look first and why.
 
 CLI:  python agent.py "where is my mouse?"
@@ -21,8 +21,8 @@ from datetime import datetime, timezone
 
 import db as dbmod
 import temporal_memory as tm
-from claude_client import (AGENT_MODEL, block_to_dict, get_client, image_block,
-                           text_of)
+from llm import (AGENT_MODEL, VISION_MODEL, function_calls, function_tool,
+                 get_client, image_part, output_text, text_part)
 from recognition import BELONGINGS_DIR, load_belongings
 
 MAX_TURNS = 8
@@ -37,7 +37,7 @@ label, nearby objects, a recognition match score, and sometimes phone GPS.
 How to answer:
 - Always look up the data with tools before answering; never invent sightings.
 - The most recent 'left_view' sighting is usually the best clue to where an item is now.
-- When useful, open the photo of the key sighting (view_sighting_photo) to describe the spot precisely.
+- When useful, look at the photo of the key sighting (look_at_photo) to describe the spot precisely.
 - Give: where to look first, why (cite evidence and times), and 1-2 backup places if the evidence is weak
   or old. Say plainly when you don't know (never seen, or seen long ago).
 - Cite sightings as [#id] so the app can show their photos. Use relative times ("12 minutes ago") and the
@@ -60,20 +60,18 @@ Time questions ("how long since you saw...", "where was it at 10 AM?", "what hav
 - If a name matches several belongings (ambiguous), ask which one or answer for each by full name."""
 
 TOOLS = [
-    {
-        "name": "list_belongings",
-        "description": "List the user's registered belongings with their most "
-                       "recent sighting summary. With not_seen_for_minutes, group them "
-                       "into not seen for that long / seen within it / never seen.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"not_seen_for_minutes": {"type": "number"}},
-        },
-    },
-    {
-        "name": "search_sightings",
-        "description": "Search the sighting history, newest first.",
-        "input_schema": {
+    function_tool(
+        "list_belongings",
+        "List the user's registered belongings with their most recent sighting "
+        "summary. With not_seen_for_minutes, group them into not seen for that "
+        "long / seen within it / never seen.",
+        {"type": "object",
+         "properties": {"not_seen_for_minutes": {"type": "number"}}},
+    ),
+    function_tool(
+        "search_sightings",
+        "Search the sighting history, newest first.",
+        {
             "type": "object",
             "properties": {
                 "belonging": {"type": "string",
@@ -90,16 +88,17 @@ TOOLS = [
                                               "(with the user's UTC offset)"},
                 "end_time": {"type": "string",
                              "description": "Only sightings at/before this ISO 8601 time"},
-                "limit": {"type": "integer", "default": 15, "maximum": 50},
+                "limit": {"type": "integer",
+                          "description": "Max results (default 15, max 50)"},
             },
         },
-    },
-    {
-        "name": "get_last_seen",
-        "description": "When and where a belonging was last seen, with the time since "
-                       "already computed, plus a few earlier sightings. With at_time: the "
-                       "last sighting at or before that time (historical recall).",
-        "input_schema": {
+    ),
+    function_tool(
+        "get_last_seen",
+        "When and where a belonging was last seen, with the time since already "
+        "computed, plus a few earlier sightings. With at_time: the last sighting "
+        "at or before that time (historical recall).",
+        {
             "type": "object",
             "properties": {
                 "belonging": {"type": "string",
@@ -112,26 +111,26 @@ TOOLS = [
             },
             "required": ["belonging"],
         },
-    },
-    {
-        "name": "view_sighting_photo",
-        "description": "Look at the snapshot of a sighting (the item is boxed "
-                       "in green on the full frame).",
-        "input_schema": {
+    ),
+    function_tool(
+        "look_at_photo",
+        "Look at the snapshot of a sighting (the item is boxed in green) and "
+        "answer a question about it, e.g. 'What surface is it on and what is "
+        "right next to it?'",
+        {
             "type": "object",
             "properties": {
                 "sighting_id": {"type": "integer"},
-                "view": {"type": "string", "enum": ["frame", "closeup"],
-                         "default": "frame"},
+                "question": {"type": "string"},
             },
-            "required": ["sighting_id"],
+            "required": ["sighting_id", "question"],
         },
-    },
-    {
-        "name": "get_context",
-        "description": "Current local time and the user's live phone GPS (if connected).",
-        "input_schema": {"type": "object", "properties": {}},
-    },
+    ),
+    function_tool(
+        "get_context",
+        "Current local time and the user's live phone GPS (if connected).",
+        {"type": "object", "properties": {}},
+    ),
 ]
 
 
@@ -170,7 +169,7 @@ def summarize(row, gps=None, now=None, tz=None):
         "place": row["place"],
         "nearby_objects": row["nearby"] or None,
         "match_score": row["match_score"],
-        "claude_verified": {1: "yes", 0: "no"}.get(row["verified"], "unchecked"),
+        "ai_verified": {1: "yes", 0: "no"}.get(row["verified"], "unchecked"),
     }
     if row["latitude"] is not None:
         out["gps"] = f"{row['latitude']:.5f},{row['longitude']:.5f} (±{row['accuracy']:.0f} m)"
@@ -185,11 +184,12 @@ def summarize(row, gps=None, now=None, tz=None):
 # ---------------------------------------------------------------------------
 class MemoryTools:
     def __init__(self, db_path=None, belongings_dir=BELONGINGS_DIR,
-                 gps_provider=lambda: None, now=None):
+                 gps_provider=lambda: None, now=None, vision=None):
         self.db_path = db_path
         self.belongings_dir = belongings_dir
         self.gps_provider = gps_provider
         self.now = now  # fixed "now" for tests
+        self.vision = vision  # callable(content_parts) -> text; set by RecallAgent
         self.tz = None  # user's zone for this request (None = this machine's)
         self.referenced = set()
         self.lookups = []  # historical lookups, shown as evidence cards in the UI
@@ -206,7 +206,7 @@ class MemoryTools:
         return self.now or datetime.now(timezone.utc)
 
     def run(self, name, args):
-        """Returns tool_result content: a string or a list of content blocks."""
+        """Run a tool; always returns a string (function_call_output)."""
         try:
             fn = getattr(self, f"tool_{name}")
         except AttributeError:
@@ -222,7 +222,7 @@ class MemoryTools:
                                               self._now(), self.belongings_dir, tz=self.tz)
             for group in ("not_seen_since", "seen_within"):
                 self.referenced.update(i["sighting_id"] for i in inv[group])
-                inv[group] = [_for_claude(i) for i in inv[group]]
+                inv[group] = [_for_model(i) for i in inv[group]]
             return json.dumps(inv, indent=1)
         out = []
         with dbmod.connect(self.db_path) as db:
@@ -327,12 +327,13 @@ class MemoryTools:
                 self.referenced.add(obs["sighting_id"])
             if at_time:
                 self.lookups.append(obs)
-            out.append(_for_claude(obs))
+            out.append(_for_model(obs))
         if len(out) > 1:
             return json.dumps({"ambiguous": True, "matches": out}, indent=1)
         return json.dumps(out[0], indent=1)
 
-    def tool_view_sighting_photo(self, sighting_id, view="frame"):
+    def tool_look_at_photo(self, sighting_id,
+                           question="Describe exactly where the boxed item is."):
         from interpreter import frame_with_box
         with dbmod.connect(self.db_path) as db:
             row = db.execute("SELECT * FROM sightings WHERE id=?",
@@ -340,13 +341,18 @@ class MemoryTools:
         if row is None:
             return f"No sighting #{sighting_id}"
         self.referenced.add(row["id"])
-        if view == "closeup" and row["crop_path"]:
-            img = image_block(row["crop_path"])
-        else:
-            img = image_block(frame_with_box(row["image_path"], row["bbox"]))
-        return [img, {"type": "text",
-                      "text": f"Sighting #{row['id']} of {row['belonging_name'] or row['object_name']}"
-                              f", {local(row['timestamp'], self._now(), self.tz)}"}]
+        if self.vision is None:
+            return "Photo viewer unavailable; use the stored description instead."
+        name = row["belonging_name"] or row["object_name"]
+        content = [image_part(frame_with_box(row["image_path"], row["bbox"]))]
+        if row["crop_path"]:
+            content.append(image_part(row["crop_path"], max_side=384))
+        content.append(text_part(
+            f"First image: camera frame; the green box is the user's {name}. "
+            + ("Second image: close-up of it. " if row["crop_path"] else "")
+            + f"Answer briefly and concretely: {question}"))
+        when = local(row["timestamp"], self._now(), self.tz)
+        return f"Sighting #{row['id']} ({when}): " + self.vision(content)
 
     def tool_get_context(self):
         gps = self.gps_provider()
@@ -363,12 +369,12 @@ def _minus(now, minutes):
     return (now - timedelta(minutes=float(minutes))).isoformat()
 
 
-# Bookkeeping Claude doesn't need; dropped to save tokens.
+# Bookkeeping the model doesn't need; dropped to save tokens.
 _HIDDEN = {"image_path", "image_url", "crop_url", "now", "belonging_id", "timestamp",
            "unusable_timestamps"}
 
 
-def _for_claude(d):
+def _for_model(d):
     if not isinstance(d, dict):
         return d
     # `is None` checks: 0 seconds / 0.0 scores are real values.
@@ -376,9 +382,9 @@ def _for_claude(d):
            if k not in _HIDDEN and v is not None and v is not False and v != []}
     for k in ("previous", "later_observation"):
         if isinstance(out.get(k), list):
-            out[k] = [_for_claude(p) for p in out[k]]
+            out[k] = [_for_model(p) for p in out[k]]
         elif isinstance(out.get(k), dict):
-            out[k] = _for_claude(out[k])
+            out[k] = _for_model(out[k])
     if d.get("sighting_id") is not None and d.get("verified") is None:
         out["verified"] = "unchecked"
     return out
@@ -401,41 +407,51 @@ class RecallAgent:
         """history: [{"role": "user"|"assistant", "content": "text"}, ...]
         user_tz: the user's IANA zone name (from the browser); invalid -> UTC."""
         if not self.enabled:
-            return {"answer": "Claude isn't configured. Set ANTHROPIC_API_KEY "
+            return {"answer": "Grok isn't configured. Set XAI_API_KEY "
                               "and restart the server.", "sightings": [], "steps": []}
         tools = self.tools.for_request(user_tz)
-        messages = [{"role": m["role"], "content": m["content"]}
-                    for m in (history or [])[-10:]]
+        if tools.vision is None:
+            tools.vision = self._look
+        messages = [{"role": "system", "content": SYSTEM}]
+        messages += [{"role": m["role"], "content": m["content"]}
+                     for m in (history or [])[-10:]]
         messages.append({"role": "user", "content": question})
         steps = []
 
-        for _ in range(MAX_TURNS):
-            response = self.client.messages.create(
-                model=self.model, max_tokens=1024, system=SYSTEM,
-                tools=TOOLS, messages=messages,
-            )
-            messages.append({"role": "assistant",
-                             "content": [block_to_dict(b) for b in response.content]})
-            calls = [b for b in response.content
-                     if getattr(b, "type", None) == "tool_use"]
-            if response.stop_reason != "tool_use" or not calls:
-                answer = text_of(response)
+        # Standard xAI function-calling loop: run every function_call in the
+        # output, send the results back chained with previous_response_id.
+        response = self.client.responses.create(
+            model=self.model, input=messages, tools=TOOLS)
+        for _ in range(MAX_TURNS - 1):
+            calls = function_calls(response)
+            if not calls:
                 break
-            results = []
-            for call in calls:
-                steps.append({"tool": call.name, "input": call.input})
-                results.append({"type": "tool_result", "tool_use_id": call.id,
-                                "content": tools.run(call.name, call.input)})
-            messages.append({"role": "user", "content": results})
-        else:
+            outputs = []
+            for call_id, name, args in calls:
+                steps.append({"tool": name, "input": args})
+                outputs.append({"type": "function_call_output", "call_id": call_id,
+                                "output": tools.run(name, args)})
+            response = self.client.responses.create(
+                model=self.model, input=outputs, tools=TOOLS,
+                previous_response_id=response.id)
+
+        if function_calls(response):
             answer = ("I couldn't finish looking through your memories - "
                       "try a more specific question.")
+        else:
+            answer = output_text(response) or "Sorry, I couldn't come up with an answer."
 
         cited = [int(i) for i in re.findall(r"\[#(\d+)\]", answer)]
         out = {"answer": answer, "sightings": self._rows(cited), "steps": steps}
         if tools.lookups:
             out["lookups"] = tools.lookups  # additive: requested vs observed time
         return out
+
+    def _look(self, content):
+        """Separate vision request used by the look_at_photo tool."""
+        response = self.client.responses.create(
+            model=VISION_MODEL, input=[{"role": "user", "content": content}])
+        return output_text(response) or "(no description)"
 
     def _rows(self, ids):
         if not ids:

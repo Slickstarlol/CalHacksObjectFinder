@@ -7,8 +7,8 @@ uvicorn
 # recognition (CLIP). Without these, recognition falls back to colour histograms.
 torch
 transformers
-# Claude agent features (needs ANTHROPIC_API_KEY)
-anthropic
+# Grok agent features via xAI API (needs XAI_API_KEY)
+openai>=1.66
 # time zones for the agent's local times (Windows has no built-in tz database)
 tzdata
 # tests

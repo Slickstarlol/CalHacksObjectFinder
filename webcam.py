@@ -4,6 +4,7 @@ Run server.py first if you want phone GPS attached to sightings (optional).
 """
 
 import argparse
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,97 @@ def to_detections(results, names):
     ]
 
 
+class BackgroundGPS:
+    """Polls the phone-GPS server in its own thread so a slow or missing
+    server never stalls the video."""
+
+    def __init__(self, interval=2.0):
+        self.latest = None
+        self.interval = interval
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        while True:
+            self.latest = get_gps()
+            time.sleep(self.interval)
+
+
+class RecognitionWorker:
+    """Runs "is it mine?" (DINOv2) + saving in a background thread.
+
+    The video loop hands over its latest frame; if the worker is still busy
+    with the previous one, the older pending frame is simply replaced, so the
+    video never waits and the worker always works on the freshest frame.
+    """
+
+    def __init__(self, make_recorder):
+        self._make_recorder = make_recorder
+        self._cond = threading.Condition()
+        self._pending = None
+        self._busy = False
+        self._stop = False
+        self.found = {}          # belonging_id -> (Match, Detection), last pass
+        self.error = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, frame, detections, gps, now):
+        with self._cond:
+            self._pending = (frame.copy(), detections, gps, now)
+            self._cond.notify()
+
+    @property
+    def idle(self):
+        with self._cond:
+            return not self._busy and self._pending is None
+
+    def _run(self):
+        # sqlite connections must be used in the thread that created them
+        recorder = self._make_recorder()
+        try:
+            while True:
+                with self._cond:
+                    while self._pending is None and not self._stop:
+                        self._cond.wait()
+                    if self._pending is None:  # stopped, nothing left to do
+                        return
+                    job, self._pending, self._busy = self._pending, None, True
+                try:
+                    self.found = recorder.process(*job)
+                except Exception as e:  # keep the camera running
+                    self.error = e
+                    print(f"[recognition] error: {e}")
+                finally:
+                    with self._cond:
+                        self._busy = False
+        finally:
+            recorder.close()
+
+    def stop(self, timeout=10):
+        """Finish the frame in progress (and one pending), then exit."""
+        with self._cond:
+            self._stop = True
+            self._cond.notify()
+        self._thread.join(timeout)
+
+
+def _iou(a, b):
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def live_box(old_xyxy, detections):
+    """Move a label onto the current frame's detection that overlaps it most,
+    so the green box follows the object between recognition passes."""
+    best = max(detections, key=lambda d: _iou(old_xyxy, d.xyxy), default=None)
+    if best is not None and _iou(old_xyxy, best.xyxy) > 0.3:
+        return best.xyxy
+    return old_xyxy
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--camera", type=int, default=CAMERA_INDEX)
@@ -79,18 +171,20 @@ def main():
 
     model = YOLO(str(BASE_DIR / "yolo11n.pt"))
     interpreter = Interpreter()
-    print("Claude interpretation:",
-          "ON" if interpreter.enabled else "off (set ANTHROPIC_API_KEY to enable)")
-    recorder = SightingRecorder(matcher, save_interval=SAVE_INTERVAL,
-                                gone_after=GONE_AFTER,
-                                on_saved=interpreter.submit)
+    print("Grok interpretation:",
+          "ON" if interpreter.enabled else "off (set XAI_API_KEY to enable)")
+    worker = RecognitionWorker(lambda: SightingRecorder(
+        matcher, save_interval=SAVE_INTERVAL, gone_after=GONE_AFTER,
+        on_saved=interpreter.submit))
+    gps = BackgroundGPS()
 
     camera = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW)
     if not camera.isOpened():
         raise RuntimeError(f"Cannot open camera {args.camera}")
+    camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # always show the newest frame
 
-    gps_cache, last_gps_check, last_recognize = None, 0.0, 0.0
-    labels = {}  # belonging_id -> (Match, xyxy) from the last recognition pass
+    last_recognize = 0.0
+    fps, last_frame = 0.0, time.monotonic()
 
     print("RecallAI started - press Q to quit")
     try:
@@ -104,37 +198,37 @@ def main():
             display = results.plot()
             now = time.monotonic()
 
-            if now - last_gps_check >= 2:
-                gps_cache = get_gps()
-                last_gps_check = now
-
-            if now - last_recognize >= RECOGNIZE_EVERY:
-                found = recorder.process(frame, detections, gps_cache, now)
+            # Hand the frame to the background worker; never wait for it.
+            if now - last_recognize >= RECOGNIZE_EVERY and worker.idle:
+                worker.submit(frame, detections, gps.latest, now)
                 last_recognize = now
-                labels = {bid: (m, det.xyxy)
-                          for bid, (m, det) in found.items()}
 
             # Highlight your belongings in green with their name
-            for m, (x1, y1, x2, y2) in labels.values():
+            for m, det in list(worker.found.values()):
+                x1, y1, x2, y2 = live_box(det.xyxy, detections)
                 p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
                 cv2.rectangle(display, p1, p2, (0, 255, 0), 3)
                 cv2.putText(display, f"{m.name} {m.score:.2f}",
                             (p1[0], max(20, p1[1] - 10)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            gps_ok = gps_cache is not None
+            dt = now - last_frame
+            last_frame = now
+            if dt > 0:
+                fps = 0.9 * fps + 0.1 * (1 / dt) if fps else 1 / dt
+            gps_ok = gps.latest is not None
             cv2.putText(display, "GPS: ON" if gps_ok else "GPS: off (optional)",
                         (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
                         (0, 255, 0) if gps_ok else (0, 165, 255), 2)
-            cv2.putText(display, f"Mine in view: {len(labels)}", (20, 70),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(display, f"Mine in view: {len(worker.found)}   {fps:.0f} FPS",
+                        (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             cv2.imshow("RecallAI - Visual Memory", display)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
         camera.release()
-        recorder.close()
+        worker.stop()
         cv2.destroyAllWindows()
 
 

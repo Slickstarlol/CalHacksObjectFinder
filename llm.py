@@ -3,9 +3,11 @@
 Uses xAI's Responses API through the official OpenAI Python SDK, as in
 xAI's own docs (base URL https://api.x.ai/v1).
 
-Set your key once (get one at https://console.x.ai):
-    Windows:      setx XAI_API_KEY "xai-..."     (then open a new terminal)
-    macOS/Linux:  export XAI_API_KEY=xai-...
+Put your key (from https://console.x.ai) in a file named .env next to
+this one - it is git-ignored, so it never gets pushed:
+    XAI_API_KEY=xai-...
+An XAI_API_KEY environment variable also works and takes priority.
+Run `python check_grok.py` to test the whole setup.
 
 Without a key everything still runs; the Grok features are just skipped.
 """
@@ -22,6 +24,31 @@ import numpy as np
 
 BASE_DIR = Path(__file__).resolve().parent
 XAI_BASE_URL = "https://api.x.ai/v1"
+ENV_FILE = BASE_DIR / ".env"
+
+
+def load_env_file(path=ENV_FILE):
+    """Minimal .env reader (KEY=value lines). Real environment variables win.
+    Returns the keys it set."""
+    loaded = []
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig")  # tolerate Notepad's BOM
+    except OSError:
+        return loaded
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip().strip('"').strip("'")
+        if key and value and not os.environ.get(key):
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
+load_env_file()
 
 # One model for everything by default; override per role if you like.
 VISION_MODEL = os.environ.get("RECALL_VISION_MODEL", "grok-4.7")
@@ -32,7 +59,7 @@ MAX_IMAGE_SIDE = 768  # downscale before sending: faster and cheaper
 
 def get_client():
     """OpenAI SDK client pointed at xAI, or None if no key is set."""
-    key = os.environ.get("XAI_API_KEY")
+    key = os.environ.get("XAI_API_KEY", "").strip()
     if not key:
         return None
     try:
@@ -40,7 +67,15 @@ def get_client():
     except ImportError:
         print("[grok] pip install openai  to enable Grok features")
         return None
-    return OpenAI(api_key=key, base_url=XAI_BASE_URL, timeout=60)
+    try:
+        client = OpenAI(api_key=key, base_url=XAI_BASE_URL, timeout=60)
+    except Exception as e:  # e.g. old openai + new httpx ("proxies")
+        print(f'[grok] openai package is broken/too old ({e}): pip install -U "openai>=1.66"')
+        return None
+    if not hasattr(client, "responses"):
+        print('[grok] your openai package is too old: pip install -U "openai>=1.66"')
+        return None
+    return client
 
 
 # ---------------------------------------------------------------------------

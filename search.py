@@ -18,7 +18,7 @@ COLUMNS = """id, object_name, latitude, longitude, accuracy, timestamp,
              match_score, bbox, crop_path, nearby, verified, verify_reason,
              description, place"""
 
-# Sightings Claude rejected ("not your item") are kept for debugging but hidden.
+# Sightings Grok rejected ("not your item") are kept for debugging but hidden.
 VISIBLE = "COALESCE(verified, 1) != 0"
 
 

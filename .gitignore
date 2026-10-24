@@ -8,3 +8,6 @@ belongings/*/embeddings_*.npz
 .pytest_cache/
 venv/
 .venv/
+
+# secrets (API keys)
+.env

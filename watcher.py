@@ -6,7 +6,7 @@ Every minute (inside server.py):
                       last seen  -> you probably walked off without it
      - out_of_sight : the item left the camera's view and hasn't been seen
                       for FORGOT_AFTER_MIN minutes
-  2. Claude reviews the candidates with their recent history and decides
+  2. Grok reviews the candidates with their recent history and decides
      which deserve an alert (and writes a short, specific message). Without
      an API key, a plain template message is used instead.
 Each sighting can trigger at most one alert.
@@ -22,17 +22,17 @@ from datetime import datetime, timedelta, timezone
 import db as dbmod
 import temporal_memory as tm
 from agent import ago, distance_m, local
-from claude_client import AGENT_MODEL, get_client, tool_input
+from llm import AGENT_MODEL, call_tool, function_tool, get_client, text_part
 from recognition import BELONGINGS_DIR, load_belongings
 
 FORGOT_AFTER_MIN = 10
 MOVED_AWAY_M = 150
 VISIBLE = "COALESCE(verified, 1) != 0"
 
-DECIDE_TOOL = {
-    "name": "decide_alerts",
-    "description": "Decide which candidate items to alert the user about.",
-    "input_schema": {
+DECIDE_TOOL = function_tool(
+    "decide_alerts",
+    "Decide which candidate items to alert the user about.",
+    {
         "type": "object",
         "properties": {
             "alerts": {
@@ -55,7 +55,7 @@ DECIDE_TOOL = {
         },
         "required": ["alerts"],
     },
-}
+)
 
 DECIDE_PROMPT = """You are RecallAI's forgotten-item watcher. Below are the user's belongings that simple rules flagged as possibly left behind, with their recent sighting history (newest first).
 
@@ -134,20 +134,16 @@ def _describe_candidates(cands, now):
 
 
 def decide(client, cands, now=None, model=AGENT_MODEL):
-    """Ask Claude which candidates deserve an alert. {belonging_id: decision}"""
+    """Ask Grok which candidates deserve an alert. {belonging_id: decision}"""
     now = now or datetime.now(timezone.utc)
     if client is None:
         return {c["belonging"].id: {"send": True,
                                     "urgency": "high" if c["reason"] == "moved_away" else "low",
                                     "message": template_message(c, now)} for c in cands}
-    response = client.messages.create(
-        model=model, max_tokens=800,
-        tools=[DECIDE_TOOL], tool_choice={"type": "tool", "name": "decide_alerts"},
-        messages=[{"role": "user", "content": DECIDE_PROMPT.format(
-            now=now.astimezone().strftime("%a %I:%M %p"),
-            candidates=_describe_candidates(cands, now))}],
-    )
-    result = tool_input(response, "decide_alerts") or {"alerts": []}
+    prompt = DECIDE_PROMPT.format(
+        now=now.astimezone().strftime("%a %I:%M %p"),
+        candidates=_describe_candidates(cands, now))
+    result = call_tool(client, model, [text_part(prompt)], DECIDE_TOOL) or {}
     return {a["belonging_id"]: a for a in result.get("alerts", [])}
 
 
@@ -161,7 +157,7 @@ def run_once(client=None, db_path=None, gps=None, now=None,
     try:
         decisions = decide(client, cands, now)
     except Exception as e:
-        print(f"[WATCHER] Claude unavailable ({e}); using template alerts")
+        print(f"[WATCHER] Grok unavailable ({e}); using template alerts")
         decisions = decide(None, cands, now)
 
     new = []
@@ -170,7 +166,7 @@ def run_once(client=None, db_path=None, gps=None, now=None,
             d = decisions.get(c["belonging"].id)
             if not d or not d.get("send"):
                 # Remember the decision so we don't ask again for this sighting
-                d = {"urgency": "none", "message": "(Claude: no alert needed)",
+                d = {"urgency": "none", "message": "(Grok: no alert needed)",
                      "send": False}
             db.execute(
                 "INSERT OR IGNORE INTO alerts (belonging_id, belonging_name, "

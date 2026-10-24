@@ -1,6 +1,6 @@
 """Temporal memory: last-seen, historical recall and inventory, plus how the
 agent, API and watcher use them. Every test runs on a frozen clock against
-a temporary SQLite database (no camera, Claude key or network needed)."""
+a temporary SQLite database (no camera, Grok key or network needed)."""
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -17,7 +17,7 @@ import watcher
 from conftest import RED, make_object_image, register
 from recognition import BelongingMatcher, HistogramEmbedder
 from recorder import Detection, SightingRecorder
-from test_claude_features import FakeClient, reply, text, tool_use
+from test_grok_features import FakeClient, fcall, message, reply
 
 NOW = datetime(2026, 10, 24, 18, 0, tzinfo=timezone.utc)
 
@@ -240,7 +240,7 @@ def test_recorder_left_view_relabelled_from_seen(tmp_path, belongings_dir, monke
 
 def test_rejected_excluded_unverified_flagged(mem):
     mem.add(timestamp=ago(minutes=50), verified=1)
-    mem.add(timestamp=ago(minutes=5), verified=0)        # Claude: not yours
+    mem.add(timestamp=ago(minutes=5), verified=0)        # Grok: not yours
     mem.add(timestamp=ago(minutes=20))                   # not reviewed yet
     r = last(mem)
     assert r["seconds_since"] == 1200 and r["verified"] is None
@@ -471,16 +471,17 @@ def test_search_sightings_absolute_window(mem):
 
 
 def test_agent_answers_from_tool_values_with_citations_and_lookups(mem, day):
-    """Claude is routed to get_last_seen(at_time) and sees Python's numbers;
+    """Grok is routed to get_last_seen(at_time) and sees Python's numbers;
     the API returns the cited photo and the requested-vs-observed lookup."""
     def final(kw):
-        result = json.loads(kw["messages"][2]["content"][0]["content"])
+        assert kw["input"][0]["type"] == "function_call_output"
+        result = json.loads(kw["input"][0]["output"])
         assert result["seconds_before_requested"] == 480
         assert result["absolute_time"] == "today at 9:52 AM"   # in the user's zone (UTC)
-        return reply(text(f"The last sighting before 10 AM was at 9:52 AM, on the desk "
-                          f"[#{result['sighting_id']}]."))
+        return reply(message(f"The last sighting before 10 AM was at 9:52 AM, on the desk "
+                             f"[#{result['sighting_id']}]."))
     client = FakeClient(
-        reply(tool_use("get_last_seen", {"belonging": "mouse", "at_time": day["at"](10, 0)})),
+        reply(fcall("get_last_seen", {"belonging": "mouse", "at_time": day["at"](10, 0)})),
         final)
     agent = agentmod.RecallAgent(client=client, tools=tools_for(mem))
     out = agent.ask("where was my mouse at 10?", user_tz="UTC")
