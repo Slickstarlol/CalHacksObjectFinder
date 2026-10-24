@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import db as dbmod
+import temporal_memory as tm
 from agent import ago, distance_m, local
 from claude_client import AGENT_MODEL, get_client, tool_input
 from recognition import BELONGINGS_DIR, load_belongings
@@ -94,7 +95,7 @@ def find_candidates(db_path=None, gps=None, now=None, belongings_dir=BELONGINGS_
                 age = now - datetime.fromisoformat(last["timestamp"])
                 if age >= timedelta(minutes=forgot_after_min):
                     reason = "out_of_sight"
-                    detail = f"out of view for {age.total_seconds() / 60:.0f} min"
+                    detail = f"out of view for {tm.format_duration(age.total_seconds())}"
             if reason is None:
                 continue
 
@@ -113,8 +114,9 @@ def template_message(c, now=None):
     name = c["belonging"].name
     if name.lower().startswith("my "):
         name = name[3:]
-    return (f"Did you forget your {name}? Last seen "
-            f"{ago(last['timestamp'], now)}: {where}.")
+    seconds = tm.elapsed(tm.parse_timestamp(last["timestamp"]), now)
+    return (f"Your {name} hasn't been seen for {tm.format_duration(seconds)}. "
+            f"Last seen: {where}.")
 
 
 def _describe_candidates(cands, now):

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 import db as dbmod
+import temporal_memory as tm
 from recognition import BELONGINGS_DIR, load_belongings
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,6 +43,7 @@ def search_page():
 def list_belongings():
     """Every registered belonging, with its most recent sighting (if any)."""
     out = []
+    now = tm.utcnow()
     with dbmod.connect() as db:
         for b in load_belongings(BELONGINGS_DIR):
             row = db.execute(
@@ -56,9 +58,28 @@ def list_belongings():
                 "id": b.id, "name": b.name, "category": b.category,
                 "photos": len(b.reference_paths), "sightings": n,
                 "last": row_to_sighting(row) if row else None,
+                # Additive: computed age, verification and recording-gap state.
+                "last_seen": tm.get_last_seen(b.id, now=now, name=b.name),
             })
     out.sort(key=lambda x: (x["last"] or {}).get("timestamp") or "", reverse=True)
     return out
+
+
+@router.get("/api/belongings/{belonging_id}/last-seen")
+def belonging_last_seen(
+    belonging_id: str,
+    at: str | None = Query(None, description="ISO 8601: last sighting at or before this time"),
+    history: int = Query(5, ge=0, le=50),
+):
+    """When/where this belonging was last seen (optionally as of `at`)."""
+    names = {b.id: b.name for b in load_belongings(BELONGINGS_DIR)}
+    if belonging_id not in names:
+        raise HTTPException(404, f'No registered belonging "{belonging_id}"')
+    try:
+        return tm.get_last_seen(belonging_id, belongings_dir=BELONGINGS_DIR, at=at,
+                                history=history, name=names[belonging_id])
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 @router.get("/api/objects")

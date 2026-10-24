@@ -9,6 +9,8 @@ torch
 transformers
 # Claude agent features (needs ANTHROPIC_API_KEY)
 anthropic
+# time zones for the agent's local times (Windows has no built-in tz database)
+tzdata
 # tests
 pytest
 httpx
