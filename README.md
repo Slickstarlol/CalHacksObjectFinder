@@ -39,6 +39,15 @@ Models can be changed with `RECALL_VISION_MODEL` / `RECALL_AGENT_MODEL`.
    `uvicorn server:app --host 0.0.0.0 --port 8000`
 3. **Start the camera:** `python webcam.py` (`--camera 0`, `--threshold 0.75`)
 4. **Search:** open http://localhost:8000/search
+5. **Dashboard** (live camera, last locations, people):
+   ```
+   cd RecallAIFrontEnd
+   npm install
+   npm run dev
+   ```
+   Open http://localhost:5173. It mirrors the annotated webcam from `webcam.py`,
+   shows where each belonging was last seen, and lets you save people
+   (description, relationship, and how long you have known them).
 
 ## How it decides
 | Event | When |

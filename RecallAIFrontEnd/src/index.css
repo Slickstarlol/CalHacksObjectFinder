@@ -1,0 +1,77 @@
+:root {
+  color-scheme: light;
+  --ink: #241c16;
+  --muted: #5e564e;
+  --paper: #efe6d8;
+  --paper-2: #e7dccb;
+  --card: #fbf7f1;
+  --line: #d9cebf;
+  --teal: #0c6b58;
+  --teal-deep: #08483c;
+  --amber: #a85b12;
+  --rose: #8d3030;
+  --shadow: 0 16px 40px rgba(60, 40, 20, 0.08);
+  --serif: "Fraunces", Georgia, serif;
+  --sans: "Outfit", "Segoe UI", sans-serif;
+  font: 17px/1.45 var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(12, 107, 88, 0.08), transparent 50%),
+    var(--paper);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.86em;
+  background: var(--paper-2);
+  padding: 0.1em 0.4em;
+  border-radius: 6px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pill.live::before {
+    animation: none;
+  }
+}

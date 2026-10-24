@@ -13,6 +13,7 @@ import requests
 from ultralytics import YOLO
 
 from interpreter import Interpreter
+from live_feed import LIVE_URL, PUBLISH_EVERY, LivePublisher
 from recognition import BelongingMatcher, load_embedder
 from recorder import Detection, SightingRecorder
 
@@ -21,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # ---------------------------------
 # Configuration
 # ---------------------------------
-CAMERA_INDEX = 1
+CAMERA_INDEX = 0
 GPS_URL = "http://127.0.0.1:8000/gps/latest"
 SAVE_INTERVAL = 15      # seconds between 'seen' snapshots per belonging
 GONE_AFTER = 5          # seconds out of view before 'left_view' is saved
@@ -90,9 +91,12 @@ def main():
         raise RuntimeError(f"Cannot open camera {args.camera}")
 
     gps_cache, last_gps_check, last_recognize = None, 0.0, 0.0
+    last_publish = 0.0
     labels = {}  # belonging_id -> (Match, xyxy) from the last recognition pass
+    publisher = LivePublisher(LIVE_URL)
 
     print("RecallAI started - press Q to quit")
+    print(f"Dashboard mirror: {LIVE_URL}")
     try:
         while True:
             ok, frame = camera.read()
@@ -130,9 +134,34 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             cv2.imshow("RecallAI - Visual Memory", display)
 
+            if now - last_publish >= PUBLISH_EVERY:
+                publisher.submit(display, {
+                    "gps": gps_ok,
+                    "in_view": [
+                        {
+                            "belonging_id": m.belonging_id,
+                            "name": m.name,
+                            "category": m.category,
+                            "score": round(m.score, 3),
+                            "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                        }
+                        for m, (x1, y1, x2, y2) in labels.values()
+                    ],
+                    "detections": [
+                        {
+                            "category": d.category,
+                            "confidence": round(d.confidence, 3),
+                            "bbox": [int(v) for v in d.xyxy],
+                        }
+                        for d in detections[:30]
+                    ],
+                })
+                last_publish = now
+
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
+        publisher.close()
         camera.release()
         recorder.close()
         cv2.destroyAllWindows()

@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 import db as dbmod
 from claude_client import (AGENT_MODEL, block_to_dict, get_client, image_block,
                            text_of)
+from people import list_people
 from recognition import BELONGINGS_DIR, load_belongings
 
 MAX_TURNS = 8
@@ -32,8 +33,11 @@ A camera records "sightings" of the user's registered belongings. Each sighting 
 where it was put down), a description of where it was (written by a vision model from the photo), a place
 label, nearby objects, a recognition match score, and sometimes phone GPS.
 
+The user can also save people (name, a short description, their relationship to the user, and how long
+they have known them). That list is separate from belongings. Use list_people for questions about a person.
+
 How to answer:
-- Always look up the data with tools before answering; never invent sightings.
+- Always look up the data with tools before answering; never invent sightings or people.
 - The most recent 'left_view' sighting is usually the best clue to where an item is now.
 - When useful, open the photo of the key sighting (view_sighting_photo) to describe the spot precisely.
 - Give: where to look first, why (cite evidence and times), and 1-2 backup places if the evidence is weak
@@ -84,6 +88,12 @@ TOOLS = [
     {
         "name": "get_context",
         "description": "Current local time and the user's live phone GPS (if connected).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_people",
+        "description": "List people the user has saved: name, description, "
+                       "relationship to the user, and how long they have known them.",
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
@@ -254,6 +264,19 @@ class MemoryTools:
         return [img, {"type": "text",
                       "text": f"Sighting #{row['id']} of {row['belonging_name'] or row['object_name']}"
                               f", {local(row['timestamp'])}"}]
+
+    def tool_list_people(self):
+        rows = list_people(self.db_path)
+        if not rows:
+            return "No people saved yet."
+        brief = [{
+            "name": p["name"],
+            "description": p["description"] or None,
+            "relationship": p["relationship"] or None,
+            "known_since": p["known_since"],
+            "known_for": p["known_for"],
+        } for p in rows]
+        return json.dumps(brief, indent=1)
 
     def tool_get_context(self):
         gps = self.gps_provider()

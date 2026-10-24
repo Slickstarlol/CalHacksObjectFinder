@@ -65,6 +65,12 @@ def test_search_by_id(client):
     assert len(rows) == 2
 
 
+def test_recent_sightings_are_belongings_newest_first(client):
+    rows = client.get("/api/sightings/recent").json()
+    assert [r["event"] for r in rows] == ["left_view", "seen"]
+    assert all(r["belonging_id"] == "bag1" for r in rows)
+
+
 def test_latest_and_not_found(client):
     assert client.get("/api/sightings/latest", params={"q": "my bag"}).json()["event"] == "left_view"
     assert client.get("/api/sightings/latest", params={"q": "umbrella"}).status_code == 404

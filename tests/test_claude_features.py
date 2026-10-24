@@ -195,7 +195,8 @@ def test_agent_uses_tools_then_answers_with_citations(world):
     assert [s["tool"] for s in out["steps"]] == ["search_sightings", "view_sighting_photo"]
     req = client.calls[0]
     assert {t["name"] for t in req["tools"]} == {
-        "list_belongings", "search_sightings", "view_sighting_photo", "get_context"}
+        "list_belongings", "search_sightings", "view_sighting_photo",
+        "get_context", "list_people"}
     assert "RecallAI" in req["system"]
     # tool_result ids must match the tool_use ids
     assert client.calls[1]["messages"][2]["content"][0]["tool_use_id"] == "a"

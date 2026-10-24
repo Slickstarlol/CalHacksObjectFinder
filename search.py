@@ -105,6 +105,18 @@ def search_sightings(
     return [row_to_sighting(r) for r in _query(q, limit, belonging_id)]
 
 
+@router.get("/api/sightings/recent")
+def recent_sightings(limit: int = Query(30, ge=1, le=100)):
+    """Newest sightings of registered belongings, for the tracking timeline."""
+    with dbmod.connect() as db:
+        rows = db.execute(
+            f"SELECT {COLUMNS} FROM sightings WHERE belonging_id IS NOT NULL "
+            f"AND {VISIBLE} ORDER BY timestamp DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [row_to_sighting(r) for r in rows]
+
+
 @router.get("/api/sightings/latest")
 def latest_sighting(
     q: str = Query("", description="Belonging name or object category"),
