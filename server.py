@@ -21,6 +21,7 @@ import db as dbmod
 from agent import RecallAgent, MemoryTools
 from people import router as people_router
 from search import router as search_router
+from enroll import ANGLES
 from watcher import Watcher
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,6 +87,7 @@ class LiveUpdate(BaseModel):
     height: int | None = None
     in_view: list[dict] = Field(default_factory=list)
     detections: list[dict] = Field(default_factory=list)
+    enroll: dict | None = None
 
 
 def _live_view():
@@ -134,7 +136,94 @@ def push_live(body: LiveUpdate):
             _live["jpeg"] = jpeg
         _live["meta"] = meta
         _live["updated_at"] = time.monotonic()
-    return {"status": "ok"}
+    if body.enroll:
+        _apply_enroll(body.enroll)
+    return {"status": "ok", "enroll": enroll_view()}
+
+
+# Camera enrollment. webcam.py does the seeing; this is the prompt the
+# dashboard shows, plus the switch that tells the camera to collect angles.
+_enroll_lock = threading.Lock()
+_enroll = {
+    "active": False,
+    "phase": "idle",
+    "message": "",
+    "category": None,
+    "name": None,
+    "saved": 0,
+    "needed": ANGLES,
+    "belonging_id": None,
+}
+
+
+def enroll_view():
+    with _enroll_lock:
+        return dict(_enroll)
+
+
+def _apply_enroll(report):
+    """Progress from the camera. Starting and cancelling stay with the UI,
+    so a late frame cannot turn the session back on."""
+    if not isinstance(report, dict):
+        return
+    with _enroll_lock:
+        if not _enroll["active"]:
+            return
+        for key in ("phase", "message", "category", "name", "saved", "belonging_id"):
+            if key in report and report[key] is not None:
+                _enroll[key] = report[key]
+        saved = _enroll["saved"] or 0
+        if report.get("phase") == "done" or saved >= _enroll["needed"]:
+            _enroll["active"] = False
+            _enroll["phase"] = "done"
+
+
+def reset_enroll():
+    """Test helper."""
+    with _enroll_lock:
+        _enroll.update({
+            "active": False,
+            "phase": "idle",
+            "message": "",
+            "category": None,
+            "name": None,
+            "saved": 0,
+            "needed": ANGLES,
+            "belonging_id": None,
+        })
+
+
+@app.get("/api/enroll")
+def enroll_status():
+    return enroll_view()
+
+
+@app.post("/api/enroll/start")
+def enroll_start():
+    with _enroll_lock:
+        if not _enroll["active"]:
+            _enroll.update({
+                "active": True,
+                "phase": "hold",
+                "message": "Show one object and hold it still.",
+                "category": None,
+                "name": None,
+                "saved": 0,
+                "needed": ANGLES,
+                "belonging_id": None,
+            })
+        return dict(_enroll)
+
+
+@app.post("/api/enroll/cancel")
+def enroll_cancel():
+    """Stop collecting. Angles already saved stay on disk."""
+    with _enroll_lock:
+        _enroll["active"] = False
+        if _enroll["phase"] != "done":
+            _enroll["phase"] = "idle"
+            _enroll["message"] = ""
+        return dict(_enroll)
 
 
 @app.get("/api/live")

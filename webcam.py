@@ -13,9 +13,10 @@ import cv2
 import requests
 from ultralytics import YOLO
 
+from enroll import AngleCapture, save_angle_default
 from interpreter import Interpreter
 from live_feed import LIVE_URL, PUBLISH_EVERY, LivePublisher
-from recognition import BelongingMatcher, load_embedder
+from recognition import BelongingMatcher, crop_box, load_embedder
 from recorder import Detection, SightingRecorder
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -90,12 +91,19 @@ class RecognitionWorker:
         self._stop = False
         self.found = {}          # belonging_id -> (Match, Detection), last pass
         self.error = None
+        self._reload = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def submit(self, frame, detections, gps, now):
         with self._cond:
             self._pending = (frame.copy(), detections, gps, now)
+            self._cond.notify()
+
+    def request_reload(self):
+        """The enrollment just finished; pick up its reference photos."""
+        with self._cond:
+            self._reload = True
             self._cond.notify()
 
     @property
@@ -109,13 +117,20 @@ class RecognitionWorker:
         try:
             while True:
                 with self._cond:
-                    while self._pending is None and not self._stop:
+                    while self._pending is None and not self._reload and not self._stop:
                         self._cond.wait()
-                    if self._pending is None:  # stopped, nothing left to do
+                    if self._pending is None and not self._reload:  # stopped
                         return
-                    job, self._pending, self._busy = self._pending, None, True
+                    job, self._pending = self._pending, None
+                    reload, self._reload = self._reload, False
+                    self._busy = job is not None
                 try:
-                    self.found = recorder.process(*job)
+                    if reload:
+                        recorder.matcher.reload()
+                        print("Now tracking:", ", ".join(
+                            b.name for b in recorder.matcher.belongings) or "(nothing)")
+                    if job is not None:
+                        self.found = recorder.process(*job)
                 except Exception as e:  # keep the camera running
                     self.error = e
                     print(f"[recognition] error: {e}")
@@ -148,6 +163,22 @@ def live_box(old_xyxy, detections):
     if best is not None and _iou(old_xyxy, best.xyxy) > 0.3:
         return best.xyxy
     return old_xyxy
+
+
+def _paint_enroll(display, message):
+    """Prompt along the bottom of the frame the dashboard is mirroring."""
+    if not message:
+        return
+    h, w = display.shape[:2]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale, thick = 0.55, 1
+    (tw, th), _ = cv2.getTextSize(message, font, scale, thick)
+    while tw > w - 24 and len(message) > 12:
+        message = message[:-4].rstrip() + "..."
+        (tw, th), _ = cv2.getTextSize(message, font, scale, thick)
+    cv2.rectangle(display, (0, h - th - 22), (w, h), (20, 16, 12), -1)
+    cv2.putText(display, message, (12, h - 10), font, scale,
+                (240, 230, 210), thick, cv2.LINE_AA)
 
 
 def main():
@@ -188,6 +219,9 @@ def main():
     publisher = LivePublisher(LIVE_URL)
     last_recognize = 0.0
     fps, last_frame = 0.0, time.monotonic()
+    guide = AngleCapture()
+    enrolling = False
+    enroll_id = None
 
     print("RecallAI started - press Q to quit")
     print(f"Dashboard mirror: {LIVE_URL}")
@@ -201,6 +235,41 @@ def main():
             detections = to_detections(results, model.names)
             display = results.plot()
             now = time.monotonic()
+
+            remote = publisher.remote_enroll or {}
+            if remote.get("active"):
+                if not enrolling:
+                    guide.reset()
+                    enroll_id = None
+                    enrolling = True
+                outcome = guide.step(detections, now)
+                if outcome.save and outcome.box is not None:
+                    crop = crop_box(frame, outcome.box)
+                    if crop is None or not crop.size:
+                        guide.fail_shot(
+                            "Couldn't grab that view. Hold it still and try again.")
+                    else:
+                        try:
+                            info, count = save_angle_default(
+                                outcome.category, crop, enroll_id)
+                        except Exception as e:
+                            print(f"[enroll] save failed: {e}")
+                            guide.fail_shot(
+                                "Couldn't save that angle. Hold it still and try again.")
+                        else:
+                            enroll_id = info["id"]
+                            guide.note_saved(
+                                info["category"], count, outcome.box,
+                                info["name"], info["id"], now)
+                            print(f"[enroll] {info['name']}: {count} angle(s)")
+                            if info.get("tracking"):
+                                worker.request_reload()
+                if outcome.box:
+                    x1, y1, x2, y2 = (int(v) for v in outcome.box)
+                    cv2.rectangle(display, (x1, y1), (x2, y2), (0, 220, 255), 2)
+                _paint_enroll(display, guide.message)
+            else:
+                enrolling = False
 
             # Hand the frame to the background worker; never wait for it.
             if now - last_recognize >= RECOGNIZE_EVERY and worker.idle:
@@ -250,7 +319,7 @@ def main():
                         }
                         for d in detections[:30]
                     ],
-                })
+                }, enroll=guide.status() if enrolling else None)
                 last_publish = now
 
             if cv2.waitKey(1) & 0xFF == ord("q"):

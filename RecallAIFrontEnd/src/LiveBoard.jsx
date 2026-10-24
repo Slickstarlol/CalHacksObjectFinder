@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Shot from './Shot'
 import { ago, eventLabel, groupDetections, mediaUrl, when } from './format'
-import { getJSON } from './api'
+import { getJSON, sendJSON } from './api'
 
 function scorePercent(score) {
   if (score == null || Number.isNaN(Number(score))) return null
@@ -15,12 +15,17 @@ export default function LiveBoard({
   alerts,
   serverDown,
   onDismiss,
+  onEnrolled,
 }) {
   const online = !serverDown && live?.online === true
   const [frameUrl, setFrameUrl] = useState('')
   const [frameWhileOnline, setFrameWhileOnline] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [trailState, setTrailState] = useState({ id: null, rows: null })
+  const [enroll, setEnroll] = useState(null)
+  const [enrollError, setEnrollError] = useState('')
+  const [adding, setAdding] = useState(false)
+  const finished = useRef('')
 
   if (online !== frameWhileOnline) {
     setFrameWhileOnline(online)
@@ -54,6 +59,56 @@ export default function LiveBoard({
       clearTimeout(timer)
     }
   }, [online])
+
+  useEffect(() => {
+    let stop = false
+    async function tick() {
+      try {
+        const data = await getJSON('/api/enroll')
+        if (!stop) setEnroll(data)
+      } catch {
+        // The camera section already says when the server is down.
+      }
+    }
+    tick()
+    const id = setInterval(tick, 400)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!enroll || enroll.phase !== 'done') return
+    const key = `${enroll.belonging_id || ''}:${enroll.saved}`
+    if (finished.current === key) return
+    finished.current = key
+    onEnrolled?.()
+  }, [enroll, onEnrolled])
+
+  async function startEnroll() {
+    setAdding(true)
+    setEnrollError('')
+    try {
+      setEnroll(await sendJSON('/api/enroll/start'))
+    } catch (err) {
+      const missing = err.message === 'Not Found'
+      setEnrollError(missing
+        ? 'Add is not on this server yet. Stop it and start it again, then click Add.'
+        : err.message)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function cancelEnroll() {
+    setEnrollError('')
+    try {
+      setEnroll(await sendJSON('/api/enroll/cancel'))
+    } catch (err) {
+      setEnrollError(err.message)
+    }
+  }
 
   useEffect(() => {
     if (!selectedId) return undefined
@@ -105,7 +160,9 @@ export default function LiveBoard({
         </div>
       )}
 
+      
       <section id="camera" className="section">
+        {/*
         <div className="section-head">
           <p className="kicker">01 — Camera</p>
           <h2>What the vision loop sees</h2>
@@ -114,25 +171,51 @@ export default function LiveBoard({
             your belongings, and the other boxes are objects YOLO is tracking.
           </p>
         </div>
+        */}
 
         <div className="stage-wrap">
           <div className="stage">
-            {online && shownFrame ? (
-              <img src={shownFrame} alt={cameraAlt} />
-            ) : (
-              <div className="stage-empty">
-                {serverDown ? (
-                  <p>Waiting for the RecallAI server.</p>
-                ) : live === null ? (
-                  <p>Connecting to the camera…</p>
-                ) : (
-                  <>
-                    <p>The camera is off. Start the vision loop, then this frame fills in.</p>
-                    <code>python webcam.py</code>
-                  </>
-                )}
-              </div>
-            )}
+            <div className="stage-shot">
+              {online && shownFrame ? (
+                <img src={shownFrame} alt={cameraAlt} />
+              ) : (
+                <div className="stage-empty">
+                  {serverDown ? (
+                    <p>Waiting for the RecallAI server.</p>
+                  ) : live === null ? (
+                    <p>Connecting to the camera…</p>
+                  ) : (
+                    <>
+                      <p>The camera is off. Start the vision loop, then this frame fills in.</p>
+                      <code>python webcam.py</code>
+                    </>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className={enroll?.active || adding ? 'btn add-btn is-on' : 'btn add-btn'}
+                disabled={!online || enroll?.active || adding}
+                aria-pressed={enroll?.active === true}
+                onClick={startEnroll}
+              >
+                {enroll?.active || adding ? 'Adding' : 'Add'}
+              </button>
+              {(enroll?.active || enroll?.phase === 'done') && (
+                <div className="enroll-banner" role="status">
+                  <p>{enroll.message}</p>
+                  <p className="enroll-count">
+                    {enroll.saved || 0} of {enroll.needed || 5} angles
+                    {enroll.name ? ` · ${enroll.name}` : ''}
+                  </p>
+                  {enroll.active && (
+                    <button type="button" className="btn ghost" onClick={cancelEnroll}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             {online && (
               <p className="stage-caption">
                 {live.width && live.height ? `${live.width}×${live.height}` : 'Live'}
@@ -143,6 +226,7 @@ export default function LiveBoard({
                 {live.gps ? ' · GPS on' : ''}
               </p>
             )}
+            {enrollError && <p className="enroll-error">{enrollError}</p>}
           </div>
 
           <aside className="side">

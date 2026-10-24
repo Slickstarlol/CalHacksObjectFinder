@@ -46,6 +46,8 @@ def list_belongings():
     now = tm.utcnow()
     with dbmod.connect() as db:
         for b in load_belongings(BELONGINGS_DIR):
+            if not b.tracking:
+                continue
             row = db.execute(
                 f"SELECT {COLUMNS} FROM sightings WHERE belonging_id = ? "
                 f"AND {VISIBLE} ORDER BY timestamp DESC, id DESC LIMIT 1", (b.id,)

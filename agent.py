@@ -237,6 +237,8 @@ class MemoryTools:
         out = []
         with dbmod.connect(self.db_path) as db:
             for b in load_belongings(self.belongings_dir):
+                if not b.tracking:
+                    continue
                 row = db.execute(
                     f"SELECT * FROM sightings WHERE belonging_id=? AND {VISIBLE} "
                     "ORDER BY timestamp DESC, id DESC LIMIT 1", (b.id,)).fetchone()
@@ -256,7 +258,7 @@ class MemoryTools:
         return json.dumps(out, indent=1)
 
     def _resolve(self, db, belonging):
-        items = load_belongings(self.belongings_dir)
+        items = [b for b in load_belongings(self.belongings_dir) if b.tracking]
         q = belonging.strip().lower()
         ids = [b.id for b in items if b.id == q]
         if not ids:

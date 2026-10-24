@@ -180,6 +180,8 @@ class Belonging:
     category: str
     folder: Path
     reference_paths: list = field(default_factory=list)
+    # False while the camera is still collecting the five angles.
+    tracking: bool = True
 
 
 def load_belongings(base_dir=BELONGINGS_DIR):
@@ -203,6 +205,7 @@ def load_belongings(base_dir=BELONGINGS_DIR):
                 category=info["category"].strip().lower(),
                 folder=folder,
                 reference_paths=refs,
+                tracking=bool(info.get("tracking", True)),
             )
         )
     return items
@@ -254,10 +257,12 @@ class BelongingMatcher:
     # -- loading -----------------------------------------------------------
     def reload(self):
         self.belongings = []
-        self.skipped = []          # registered but no reference photos
+        self.skipped = []          # registered but not ready to track
         self._refs = {}            # belonging_id -> (N, D) embeddings
         for item in load_belongings(self.base_dir):
-            if not item.reference_paths:
+            # An enrollment joins the tracker only after all five angles,
+            # when its info.json flips tracking on.
+            if not item.tracking or not item.reference_paths:
                 self.skipped.append(item)
                 continue
             emb = self._reference_embeddings(item)
@@ -267,6 +272,8 @@ class BelongingMatcher:
             else:
                 self.skipped.append(item)
         for item in self.skipped:
+            if item.reference_paths:
+                continue
             print(
                 f"[recognition] '{item.name}' has no reference photos - "
                 f"run: python register.py --id {item.id}"

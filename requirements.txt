@@ -9,6 +9,8 @@ torch
 transformers
 # Grok agent features via xAI API (needs XAI_API_KEY)
 openai>=1.66
+# Claude check: python check_grok.py --claude (needs ANTHROPIC_API_KEY)
+anthropic
 # time zones for the agent's local times (Windows has no built-in tz database)
 tzdata
 # tests

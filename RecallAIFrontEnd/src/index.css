@@ -1,3 +1,19 @@
+@font-face {
+  font-family: "Metropolis";
+  src: url("./assets/font/Metropolis-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Metropolis";
+  src: url("./assets/font/Metropolis-Black.otf") format("opentype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
   --ink: #241c16;
@@ -11,8 +27,8 @@
   --amber: #a85b12;
   --rose: #8d3030;
   --shadow: 0 16px 40px rgba(60, 40, 20, 0.08);
-  --serif: "Fraunces", Georgia, serif;
-  --sans: "Outfit", "Segoe UI", sans-serif;
+  --serif: "Metropolis", "Segoe UI", sans-serif;
+  --sans: "Metropolis", "Segoe UI", sans-serif;
   font: 17px/1.45 var(--sans);
   color: var(--ink);
   background: var(--paper);

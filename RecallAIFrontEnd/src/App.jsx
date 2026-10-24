@@ -105,6 +105,13 @@ export default function App() {
           alerts={alerts}
           serverDown={serverDown}
           onDismiss={dismiss}
+          onEnrolled={async () => {
+            try {
+              setBelongings(await getJSON('/api/belongings'))
+            } catch {
+              // The regular refresh will pick the new item up.
+            }
+          }}
         />
         <PeopleBoard />
         <AskBoard />

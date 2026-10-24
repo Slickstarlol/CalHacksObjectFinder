@@ -47,11 +47,12 @@ class LivePublisher:
         self._lock = threading.Lock()
         self._pending = None
         self._stop = threading.Event()
+        self.remote_enroll = None
         self._thread = threading.Thread(
             target=self._loop, name="recall-live", daemon=True)
         self._thread.start()
 
-    def submit(self, frame_bgr, meta):
+    def submit(self, frame_bgr, meta, enroll=None):
         try:
             preview, scale = fit_preview(frame_bgr)
             ok, buf = cv2.imencode(
@@ -65,6 +66,8 @@ class LivePublisher:
                 "in_view": [scale_track(i, scale) for i in meta.get("in_view", [])],
                 "detections": [scale_track(i, scale) for i in meta.get("detections", [])],
             }
+            if enroll is not None:
+                payload["enroll"] = enroll
             with self._lock:
                 self._pending = (buf.tobytes(), payload)
         except Exception as e:
@@ -86,6 +89,12 @@ class LivePublisher:
                 **payload,
             }
             try:
-                requests.post(self.url, json=body, timeout=0.5)
+                response = requests.post(self.url, json=body, timeout=0.5)
             except requests.RequestException:
-                pass
+                continue
+            try:
+                data = response.json()
+            except Exception:
+                data = None
+            if isinstance(data, dict) and "enroll" in data:
+                self.remote_enroll = data["enroll"]
