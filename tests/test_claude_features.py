@@ -195,7 +195,8 @@ def test_agent_uses_tools_then_answers_with_citations(world):
     assert [s["tool"] for s in out["steps"]] == ["search_sightings", "view_sighting_photo"]
     req = client.calls[0]
     assert {t["name"] for t in req["tools"]} == {
-        "list_belongings", "search_sightings", "view_sighting_photo", "get_context"}
+        "list_belongings", "search_sightings", "view_sighting_photo", "get_context",
+        "get_last_seen"}
     assert "RecallAI" in req["system"]
     # tool_result ids must match the tool_use ids
     assert client.calls[1]["messages"][2]["content"][0]["tool_use_id"] == "a"
@@ -287,7 +288,7 @@ def test_moved_away_rule_beats_time(world):
 def test_run_once_without_claude_uses_template_and_dedups(world):
     new = watcher.run_once(client=None, now=NOW, belongings_dir=world.dir)
     assert len(new) == 1
-    assert new[0]["message"].startswith("Did you forget your Mouse? Last seen 15 minutes ago")
+    assert new[0]["message"].startswith("Your Mouse hasn't been seen for 15 minutes. Last seen: ")
     assert "right of the laptop" in new[0]["message"]
     assert watcher.run_once(client=None, now=NOW, belongings_dir=world.dir) == []
 

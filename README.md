@@ -19,6 +19,7 @@ everything still runs; the Claude features are skipped (alerts use a plain templ
 | Recognizes **your** specific item | DINOv2 match, then Claude compares the frame with your reference photos; sightings it rejects are hidden | `recognition.py`, `interpreter.py` |
 | Interprets where it was last seen | Claude writes a sentence ("On the gray table, left of the laptop") and a place label for each sighting | `interpreter.py` (Haiku 5.5) |
 | Searches historical memories | Agent tools: `list_belongings`, `search_sightings` (by item, text, time window), `view_sighting_photo`, `get_context` | `agent.py` (Sonnet 5.5) |
+| Remembers *when* it saw each item | Python computes every time and duration from the sightings table (Claude only phrases them): last seen + time since, "where was it at 10 AM?" (latest sighting at or before), time windows, and "what haven't you seen in 30 min?". Agent tools `get_last_seen` (new) and `list_belongings(not_seen_for_minutes)`; `GET /api/belongings/{id}/last-seen[?at=ISO]`; live "Last seen 23 minutes ago" labels on /search | `temporal_memory.py` |
 | Understands natural-language questions | "Ask RecallAI" box on /search; `POST /api/ask` | `agent.py`, `server.py` |
 | Suggests where to look and why | System prompt: best spot + evidence + backup places, citing sightings `[#id]` with photos | `agent.py` |
 | Proactively flags forgotten items | Rules (moved >150 m from item / out of view 10+ min); Claude decides and writes the alert; shown on /search and the phone GPS page | `watcher.py` |

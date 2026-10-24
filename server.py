@@ -68,6 +68,7 @@ class Turn(BaseModel):
 class Question(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
     history: list[Turn] = []
+    timezone: str | None = Field(None, max_length=64)  # browser IANA zone, optional
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -100,7 +101,7 @@ async def ask(q: Question):
     """Natural-language question about your belongings -> Claude's answer."""
     try:
         return await run_in_threadpool(
-            agent.ask, q.question, [t.model_dump() for t in q.history])
+            agent.ask, q.question, [t.model_dump() for t in q.history], q.timezone)
     except Exception as e:
         raise HTTPException(502, f"Claude request failed: {e}")
 
