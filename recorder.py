@@ -56,7 +56,7 @@ class SightingRecorder:
         (self.snapshot_dir / "crops").mkdir(parents=True, exist_ok=True)
         self.save_interval = save_interval
         self.gone_after = gone_after
-        self.on_saved = on_saved  # e.g. Interpreter.submit(row_id) -> Claude
+        self.on_saved = on_saved  # e.g. Interpreter.submit(row_id) -> Grok
         dbmod.init_db(db_path)
         self.db = dbmod.connect(db_path)
         self.last_saved = {}     # belonging_id -> monotonic time

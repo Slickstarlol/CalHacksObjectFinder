@@ -1,4 +1,4 @@
-"""Claude looks at each saved sighting and records:
+"""Grok looks at each saved sighting and records:
 
   * verified     - is the boxed object really YOUR item? (second opinion
                    on top of DINOv2; rejected sightings are hidden)
@@ -8,7 +8,7 @@
 
 Runs in a background thread so the camera never waits for the API.
 
-Backfill sightings saved before Claude was enabled:
+Backfill sightings saved before Grok was enabled:
     python interpreter.py --backfill
 """
 
@@ -20,14 +20,14 @@ import threading
 import cv2
 
 import db as dbmod
-from claude_client import (VISION_MODEL, BASE_DIR, get_client, image_block,
-                           tool_input)
+from llm import (VISION_MODEL, BASE_DIR, call_tool, function_tool,
+                 get_client, image_part, text_part)
 from recognition import BELONGINGS_DIR, load_belongings
 
-TOOL = {
-    "name": "record_sighting",
-    "description": "Record your interpretation of this sighting.",
-    "input_schema": {
+TOOL = function_tool(
+    "record_sighting",
+    "Record your interpretation of this sighting.",
+    {
         "type": "object",
         "properties": {
             "same_item": {
@@ -53,7 +53,7 @@ TOOL = {
         },
         "required": ["same_item", "verify_reason", "location", "place"],
     },
-}
+)
 
 PROMPT = """You are the visual memory of RecallAI, which helps {owner} remember where their belongings are.
 
@@ -78,28 +78,16 @@ def frame_with_box(image_path, bbox):
 
 def interpret(client, row, belongings_dir=BELONGINGS_DIR, owner="the owner",
               model=VISION_MODEL):
-    """One Claude call for one sighting row. Returns the tool input dict."""
+    """One Grok call for one sighting row. Returns the tool arguments."""
     item = next((b for b in load_belongings(belongings_dir)
                  if b.id == row["belonging_id"]), None)
     content = []
     if item:
         for ref in item.reference_paths[:2]:
-            content.append(image_block(ref, max_side=384))
-    content.append(image_block(frame_with_box(row["image_path"], row["bbox"])))
-    content.append({"type": "text", "text": PROMPT.format(
-        owner=owner, name=row["belonging_name"])})
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=400,
-        tools=[TOOL],
-        tool_choice={"type": "tool", "name": TOOL["name"]},
-        messages=[{"role": "user", "content": content}],
-    )
-    result = tool_input(response, TOOL["name"])
-    if result is None:
-        raise RuntimeError("Claude did not call record_sighting")
-    return result
+            content.append(image_part(ref, max_side=384))
+    content.append(image_part(frame_with_box(row["image_path"], row["bbox"])))
+    content.append(text_part(PROMPT.format(owner=owner, name=row["belonging_name"])))
+    return call_tool(client, model, content, TOOL)
 
 
 def save_interpretation(db, sighting_id, result):
@@ -140,10 +128,10 @@ class Interpreter:
                 return None
             result = interpret(self.client, row, self.belongings_dir, self.owner)
             save_interpretation(db, sighting_id, result)
-        tag = {"yes": "confirmed", "no": "REJECTED", "unsure": "unsure"}[
-            result["same_item"]]
-        print(f"[CLAUDE] #{sighting_id} {row['belonging_name']} {tag}: "
-              f"{result['location']}")
+        tag = {"yes": "confirmed", "no": "REJECTED"}.get(
+            result.get("same_item"), "unsure")
+        print(f"[GROK] #{sighting_id} {row['belonging_name']} {tag}: "
+              f"{result.get('location')}")
         return result
 
     def _run(self):
@@ -152,7 +140,7 @@ class Interpreter:
             try:
                 self.process(sid)
             except Exception as e:  # never kill the worker
-                print(f"[CLAUDE] could not interpret #{sid}: {e}")
+                print(f"[GROK] could not interpret #{sid}: {e}")
             finally:
                 self.q.task_done()
 
@@ -163,7 +151,7 @@ class Interpreter:
 def backfill(client=None, db_path=None):
     it = Interpreter(client=client, db_path=db_path)
     if not it.enabled:
-        raise SystemExit("Set ANTHROPIC_API_KEY first.")
+        raise SystemExit("Set XAI_API_KEY first.")
     dbmod.init_db(db_path)
     with dbmod.connect(db_path) as db:
         ids = [r[0] for r in db.execute(

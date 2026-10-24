@@ -42,8 +42,8 @@ NEW_COLUMNS = {
     "bbox": "TEXT",
     "crop_path": "TEXT",
     "nearby": "TEXT",
-    # Filled in by Claude (interpreter.py)
-    "verified": "INTEGER",        # 1 = Claude confirms it's yours, 0 = not yours, NULL = unchecked/unsure
+    # Filled in by Grok (interpreter.py)
+    "verified": "INTEGER",        # 1 = Grok confirms it's yours, 0 = not yours, NULL = unchecked/unsure
     "verify_reason": "TEXT",
     "description": "TEXT",        # "On the gray folding table, left of the green bag"
     "place": "TEXT",              # short label: "hackathon table", "kitchen counter"
