@@ -1,0 +1,130 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
+<title>RecallAI GPS</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 30px;
+}
+button {
+    padding: 15px 24px;
+    margin: 10px;
+    font-size: 18px;
+}
+</style>
+</head>
+<body>
+
+<nav style="margin-bottom:20px">GPS · <a href="/search">Search</a></nav>
+
+<h1>RecallAI</h1>
+<h3>Phone Location Connection</h3>
+
+<button onclick="startGPS()">Enable GPS</button>
+<button onclick="stopGPS()">Stop GPS</button>
+
+<p id="status">GPS disconnected</p>
+
+<div id="alerts" style="max-width:480px;margin:20px auto;text-align:left"></div>
+
+<script>
+let watchID = null;
+
+function startGPS() {
+    if (!navigator.geolocation) {
+        document.getElementById("status").textContent =
+            "Geolocation is unavailable";
+        return;
+    }
+
+    if (watchID !== null) return;
+
+    watchID = navigator.geolocation.watchPosition(
+        async position => {
+            const gps = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy
+            };
+
+            try {
+                const response = await fetch("/gps", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(gps)
+                });
+
+                if (!response.ok) {
+                    throw new Error("Server rejected GPS");
+                }
+
+                document.getElementById("status").textContent =
+                    "GPS Connected! Accuracy: ±" +
+                    Math.round(gps.accuracy) + " meters";
+
+            } catch (error) {
+                document.getElementById("status").textContent =
+                    "Could not send GPS to laptop";
+            }
+        },
+        error => {
+            document.getElementById("status").textContent =
+                error.message;
+
+            if (watchID !== null) {
+                navigator.geolocation.clearWatch(watchID);
+                watchID = null;
+            }
+        },
+        {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 15000
+        }
+    );
+}
+
+// Proactive "did you forget it?" alerts from RecallAI
+const shown = new Set();
+async function pollAlerts() {
+    try {
+        const alerts = await (await fetch("/api/alerts")).json();
+        const box = document.getElementById("alerts");
+        box.innerHTML = "";
+        for (const a of alerts) {
+            const div = document.createElement("div");
+            div.style.cssText = "padding:12px;margin:8px 0;border-radius:10px;" +
+                (a.urgency === "high" ? "background:#fdecea" : "background:#fff4e5");
+            div.textContent = a.message;
+            box.appendChild(div);
+            if (!shown.has(a.id)) {
+                shown.add(a.id);
+                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            }
+        }
+    } catch (e) { /* laptop offline */ }
+}
+pollAlerts();
+setInterval(pollAlerts, 20000);
+
+function stopGPS() {
+    if (watchID !== null) {
+        navigator.geolocation.clearWatch(watchID);
+        watchID = null;
+    }
+
+    document.getElementById("status").textContent =
+        "GPS stopped";
+}
+</script>
+
+</body>
+</html>

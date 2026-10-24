@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+memory.db
+memory.db-wal
+memory.db-shm
+snapshots/
+belongings/*/embeddings_*.npz
+.pytest_cache/
+venv/
+.venv/

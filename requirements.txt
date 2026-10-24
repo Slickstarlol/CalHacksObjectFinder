@@ -1,0 +1,14 @@
+ultralytics>=8.3
+opencv-python
+numpy
+requests
+fastapi
+uvicorn
+# recognition (CLIP). Without these, recognition falls back to colour histograms.
+torch
+transformers
+# Claude agent features (needs ANTHROPIC_API_KEY)
+anthropic
+# tests
+pytest
+httpx

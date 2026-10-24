@@ -1,0 +1,142 @@
+"""RecallAI live camera: watch for YOUR belongings and remember where they were.
+
+Run server.py first if you want phone GPS attached to sightings (optional).
+"""
+
+import argparse
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import cv2
+import requests
+from ultralytics import YOLO
+
+from interpreter import Interpreter
+from recognition import BelongingMatcher, load_embedder
+from recorder import Detection, SightingRecorder
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# ---------------------------------
+# Configuration
+# ---------------------------------
+CAMERA_INDEX = 1
+GPS_URL = "http://127.0.0.1:8000/gps/latest"
+SAVE_INTERVAL = 15      # seconds between 'seen' snapshots per belonging
+GONE_AFTER = 5          # seconds out of view before 'left_view' is saved
+RECOGNIZE_EVERY = 0.5   # seconds between recognition passes (CLIP is slower than YOLO)
+MAX_GPS_AGE = 30
+DETECT_CONF = 0.35
+
+
+def get_gps():
+    try:
+        response = requests.get(GPS_URL, timeout=1)
+        response.raise_for_status()
+        data = response.json()
+        if "latitude" not in data:
+            return None
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(data["timestamp"])).total_seconds()
+        if age < 0 or age > MAX_GPS_AGE:
+            return None
+        return data
+    except (requests.RequestException, KeyError, ValueError, TypeError):
+        return None
+
+
+def to_detections(results, names):
+    return [
+        Detection(
+            category=names[int(box.cls[0])],
+            confidence=float(box.conf[0]),
+            xyxy=tuple(float(v) for v in box.xyxy[0]),
+        )
+        for box in results.boxes
+    ]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--camera", type=int, default=CAMERA_INDEX)
+    parser.add_argument("--threshold", type=float, default=None,
+                        help="match threshold (DINOv2 default 0.70). Raise it "
+                             "if strangers' items get labelled as yours.")
+    parser.add_argument("--embedder", default="dinov2",
+                        choices=["dinov2", "clip", "histogram"])
+    args = parser.parse_args()
+
+    matcher = BelongingMatcher(load_embedder(args.embedder),
+                               threshold=args.threshold)
+    print(f"Recognition: {matcher.embedder.name}, threshold {matcher.threshold:.2f}")
+    if not matcher.belongings:
+        raise SystemExit(
+            "No belongings with reference photos yet. Run: python register.py"
+        )
+    print("Watching for:",
+          ", ".join(f"{b.name} ({b.category})" for b in matcher.belongings))
+
+    model = YOLO(str(BASE_DIR / "yolo11n.pt"))
+    interpreter = Interpreter()
+    print("Claude interpretation:",
+          "ON" if interpreter.enabled else "off (set ANTHROPIC_API_KEY to enable)")
+    recorder = SightingRecorder(matcher, save_interval=SAVE_INTERVAL,
+                                gone_after=GONE_AFTER,
+                                on_saved=interpreter.submit)
+
+    camera = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW)
+    if not camera.isOpened():
+        raise RuntimeError(f"Cannot open camera {args.camera}")
+
+    gps_cache, last_gps_check, last_recognize = None, 0.0, 0.0
+    labels = {}  # belonging_id -> (Match, xyxy) from the last recognition pass
+
+    print("RecallAI started - press Q to quit")
+    try:
+        while True:
+            ok, frame = camera.read()
+            if not ok:
+                break
+
+            results = model(frame, conf=DETECT_CONF, verbose=False)[0]
+            detections = to_detections(results, model.names)
+            display = results.plot()
+            now = time.monotonic()
+
+            if now - last_gps_check >= 2:
+                gps_cache = get_gps()
+                last_gps_check = now
+
+            if now - last_recognize >= RECOGNIZE_EVERY:
+                found = recorder.process(frame, detections, gps_cache, now)
+                last_recognize = now
+                labels = {bid: (m, det.xyxy)
+                          for bid, (m, det) in found.items()}
+
+            # Highlight your belongings in green with their name
+            for m, (x1, y1, x2, y2) in labels.values():
+                p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
+                cv2.rectangle(display, p1, p2, (0, 255, 0), 3)
+                cv2.putText(display, f"{m.name} {m.score:.2f}",
+                            (p1[0], max(20, p1[1] - 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            gps_ok = gps_cache is not None
+            cv2.putText(display, "GPS: ON" if gps_ok else "GPS: off (optional)",
+                        (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                        (0, 255, 0) if gps_ok else (0, 165, 255), 2)
+            cv2.putText(display, f"Mine in view: {len(labels)}", (20, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.imshow("RecallAI - Visual Memory", display)
+
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+    finally:
+        camera.release()
+        recorder.close()
+        cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
