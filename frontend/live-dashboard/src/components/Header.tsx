@@ -1,3 +1,4 @@
+import { Logo } from './Icons';
 import type { ConnectionStatus } from './types';
 
 const LABEL: Record<ConnectionStatus, string> = {
@@ -11,15 +12,17 @@ type Props = {
   belongings: number;
   sightings: number;
   alerts: number;
+  /** "4m ago": age of the newest sighting, shown beside the Live pill. */
+  updated?: string;
   account?: { name: string; username: string; onSignOut: () => void };
 };
 
-export function Header({ status, belongings, sightings, alerts, account }: Props) {
+export function Header({ status, belongings, sightings, alerts, updated, account }: Props) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <Logo />
           <h1>RecallAI</h1>
         </div>
         <dl className="counts" aria-label="Counts">
@@ -36,12 +39,14 @@ export function Header({ status, belongings, sightings, alerts, account }: Props
             <dd>{alerts}</dd>
           </div>
         </dl>
-        <a className="btn btn-primary ask-jump" href="#ask">
-          Ask
-        </a>
         <div className={`status status-${status}`} role="status" title="SpacetimeDB connection">
           <span className="status-dot" aria-hidden="true" />
           <span className="status-text">{LABEL[status]}</span>
+          {status === 'live' && updated && (
+            <span className="status-age" title="Newest sighting">
+              · {updated}
+            </span>
+          )}
         </div>
         {account && (
           <div className="account">
@@ -49,7 +54,7 @@ export function Header({ status, belongings, sightings, alerts, account }: Props
               <span className="visually-hidden">Signed in as </span>
               {account.name}
             </span>
-            <button type="button" className="btn btn-quiet" onClick={account.onSignOut}>
+            <button type="button" className="btn btn-on-dark" onClick={account.onSignOut}>
               Sign out
             </button>
           </div>

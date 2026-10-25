@@ -37,6 +37,20 @@ export function formatRelative(date: Date, now: Date = new Date()): string {
   });
 }
 
+/** Compact relative time for tight spots: "now", "4m", "2h", "3d". */
+export function formatShortAgo(date: Date, now: Date = new Date()): string {
+  const diff = now.getTime() - date.getTime();
+  if (diff < 45_000) return 'now';
+  if (diff < HOUR) return `${Math.max(1, Math.round(diff / MINUTE))}m`;
+  if (diff < DAY) return `${Math.floor(diff / HOUR)}h`;
+  return `${Math.floor(diff / DAY)}d`;
+}
+
+/** Whole minutes since `date` (0 for future times). */
+export function minutesSince(date: Date, now: Date = new Date()): number {
+  return Math.max(0, Math.floor((now.getTime() - date.getTime()) / MINUTE));
+}
+
 function sameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&

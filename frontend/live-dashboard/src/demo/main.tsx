@@ -1,7 +1,7 @@
 /**
  * Dev-only demo (http://localhost:5174/demo.html): renders the presentational
  * Dashboard with fixture data, no SpacetimeDB or FastAPI needed.
- * Query params: ?theme=dark|light  ?drawer=<belongingId>  ?simulate=1  ?empty=1
+ * Query params: ?theme=dark|light  ?drawer=<belongingId>  ?simulate=1  ?empty=1  ?camera=off
  */
 import { StrictMode, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -9,9 +9,11 @@ import { Dashboard } from '../components/Dashboard';
 import type { AskEntry } from '../components/types';
 import { pushActivity, type ActivityItem } from '../lib/activity';
 import { useNow } from '../hooks/useNow';
+import { parseLive, type CameraState } from '../lib/live';
 import type { Sighting } from '../module_bindings/types';
 import {
   askEntries,
+  demoLive,
   belongings,
   enrollingBelonging,
   makeActivity,
@@ -24,6 +26,10 @@ import {
 import '../styles.css';
 
 const params = new URLSearchParams(location.search);
+const camera: CameraState =
+  params.get('camera') === 'off'
+    ? { ...parseLive({ online: false }), status: 'offline', frameUrl: '' }
+    : { ...parseLive(demoLive), status: 'online', frameUrl: '/demo/1792851254577_laptop.jpg' };
 const theme = params.get('theme');
 if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
 
@@ -70,6 +76,7 @@ function Demo() {
       apiBase=""
       dismissing={new Set()}
       onDismissAlert={id => setAlerts(prev => prev.map(a => (a.id === id ? { ...a, dismissed: true } : a)))}
+      camera={empty ? undefined : camera}
       initialSelectedId={params.get('drawer')}
       ask={{
         entries,

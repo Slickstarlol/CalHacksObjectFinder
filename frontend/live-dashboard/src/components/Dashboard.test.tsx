@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Dashboard, type DashboardProps } from './Dashboard';
+import { parseLive, type CameraState } from '../lib/live';
 import {
   askEntries,
   belongings,
+  demoLive,
   enrollingBelonging,
   makeActivity,
   makeAlerts,
@@ -150,7 +152,8 @@ describe('Dashboard', () => {
   it('renders answer citations as chips with live thumbnails and Grok steps', () => {
     setup();
     const chips = screen.getAllByTestId('citation');
-    expect(chips.map(c => c.textContent)).toEqual(['#1031', '#1044']);
+    expect(chips.map(c => c.querySelector('span')!.textContent)).toEqual(['#1031', '#1044']);
+    expect(chips.map(c => c.querySelector('.cite-age')!.textContent)).toEqual(['41m', '23m']);
     expect(chips[1].querySelector('img')).toHaveAttribute('src', '/demo/crop_bottle.jpg');
     expect(screen.getByText('How Grok found this (3 steps)')).toBeInTheDocument();
     expect(screen.getByText(/recent_sightings \(belonging_id: b8e2d17c4a90, limit: 5\)/)).toBeInTheDocument();
@@ -222,6 +225,74 @@ describe('Dashboard', () => {
       rerender(<Dashboard {...props} belongings={[{ ...enrollingBelonging, photos: 5, tracking: true }]} />);
       expect(within(card('Cup 1')).queryByText('Enrolling…')).not.toBeInTheDocument();
       expect(within(card('Cup 1')).getByText('Not seen yet')).toBeInTheDocument();
+    });
+  });
+
+  describe('filters', () => {
+    it('counts belongings per state and filters the grid', async () => {
+      setup({ belongings: [...belongings, enrollingBelonging] });
+      const group = screen.getByRole('group', { name: 'Filter belongings' });
+      const chip = (name: RegExp) => within(group).getByRole('button', { name });
+      expect(chip(/^All/)).toHaveTextContent('All 6');
+      expect(chip(/^Seen/)).toHaveTextContent('Seen 3');
+      expect(chip(/^Left view/)).toHaveTextContent('Left view 1');
+      expect(chip(/^Enrolling/)).toHaveTextContent('Enrolling 1');
+      expect(chip(/^Not seen yet/)).toHaveTextContent('Not seen yet 1');
+
+      await userEvent.click(chip(/^Left view/));
+      expect(chip(/^Left view/)).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getAllByTestId('belonging-card')).toHaveLength(1);
+      expect(card('Water Bottle')).toBeInTheDocument();
+
+      await userEvent.click(chip(/^All/));
+      expect(screen.getAllByTestId('belonging-card')).toHaveLength(6);
+    });
+
+    it('shows the left-behind timer once an item has been out of view long enough', () => {
+      setup({ leftAfter: 15 });
+      expect(within(card('Water Bottle')).getByText('Left behind for 23 minutes')).toBeInTheDocument();
+      expect(within(card('My Laptop')).queryByText(/Left behind/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('live feed', () => {
+    const online: CameraState = { ...parseLive(demoLive), status: 'online', frameUrl: '/api/live/frame.jpg?t=1' };
+
+    it('shows the camera frame with a clickable box per belonging in view', async () => {
+      setup({ camera: online });
+      const panel = screen.getByRole('region', { name: /Live feed/ });
+      expect(within(panel).getByText('REC')).toBeInTheDocument();
+      expect(within(panel).getByRole('img', { name: /Yours in view: My Laptop, My Bag/ })).toHaveAttribute(
+        'src',
+        '/api/live/frame.jpg?t=1'
+      );
+      const box = within(panel).getByRole('button', { name: 'My Laptop in view, 91% match. Open its history' });
+      expect(box).toHaveStyle({ left: `${(135 / 640) * 100}%`, width: `${((300 - 135) / 640) * 100}%` });
+      await userEvent.click(box);
+      expect(screen.getByRole('dialog', { name: 'My Laptop' })).toBeInTheDocument();
+    });
+
+    it('lists what is happening: yours in view, missing items, people and other objects', () => {
+      setup({ camera: online });
+      const panel = screen.getByRole('region', { name: /Live feed/ });
+      const rows = within(panel).getAllByRole('listitem').filter(li => li.classList.contains('event'));
+      const text = rows.map(r => r.textContent);
+      expect(text[0]).toMatch(/^In viewMy Laptop.*91\.2%/);
+      expect(text[1]).toMatch(/^In viewMy Bag.*86\.1%/);
+      expect(text[2]).toMatch(/^MissingWater BottleOut of view since/);
+      expect(text[3]).toMatch(/^Person3 people in view/);
+      // laptop/backpack YOLO boxes are the recognized belongings, so they aren't repeated as objects
+      expect(text.some(t => /Objectlaptop|Objectbackpack/.test(t ?? ''))).toBe(false);
+      expect(text.some(t => /^Object2 × chair/.test(t ?? ''))).toBe(true);
+      expect(within(panel).getByText('match 88.7%')).toBeInTheDocument();
+    });
+
+    it('explains how to start the camera when it is off', () => {
+      setup({ camera: { ...parseLive({ online: false }), status: 'offline', frameUrl: '' } });
+      const panel = screen.getByRole('region', { name: /Live feed/ });
+      expect(within(panel).getByText('OFF')).toBeInTheDocument();
+      expect(within(panel).getByText('python -m recallai.vision.webcam')).toBeInTheDocument();
+      expect(within(panel).queryByRole('img')).not.toBeInTheDocument();
     });
   });
 

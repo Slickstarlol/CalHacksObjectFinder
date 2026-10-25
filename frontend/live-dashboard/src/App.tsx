@@ -5,6 +5,7 @@ import type { Sighting } from './module_bindings/types';
 import { Dashboard } from './components/Dashboard';
 import type { ConnectionStatus } from './components/types';
 import { useAsk } from './hooks/useAsk';
+import { useLiveCamera } from './hooks/useLiveCamera';
 import { useNow } from './hooks/useNow';
 import { classifyUpdate, pushActivity, type ActivityItem } from './lib/activity';
 import { isVisible } from './lib/sightings';
@@ -90,6 +91,7 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
 
   const now = useNow(30_000);
   const ask = useAsk(API_BASE, authFetch);
+  const camera = useLiveCamera(API_BASE, authFetch);
 
   return (
     <Dashboard
@@ -106,6 +108,7 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
       dismissError={dismissError}
       onDismissAlert={onDismissAlert}
       ask={{ entries: ask.entries, pending: ask.pending, onAsk: ask.ask, onClear: ask.clear }}
+      camera={camera}
       account={{ name: user.display_name || user.username, username: user.username, onSignOut }}
     />
   );

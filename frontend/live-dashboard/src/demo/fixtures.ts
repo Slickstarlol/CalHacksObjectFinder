@@ -112,6 +112,29 @@ export function makeSightings(now: number): Sighting[] {
   ];
 }
 
+/** What GET /api/live returns while the camera is on (boxes match /demo/1792851254577_laptop.jpg). */
+export const demoLive = {
+  online: true,
+  age_seconds: 0.2,
+  width: 640,
+  height: 480,
+  gps: false,
+  in_view: [
+    { belonging_id: 'a1f3c9e2b7d4', name: 'My Laptop', category: 'laptop', score: 0.912, bbox: [135, 292, 300, 358] },
+    { belonging_id: '3617519a583a', name: 'My Bag', category: 'backpack', score: 0.861, bbox: [0, 352, 290, 480] },
+  ],
+  detections: [
+    { category: 'laptop', confidence: 0.88, bbox: [135, 292, 300, 358] },
+    { category: 'backpack', confidence: 0.81, bbox: [0, 352, 290, 480] },
+    { category: 'person', confidence: 0.9, bbox: [186, 222, 300, 305] },
+    { category: 'person', confidence: 0.84, bbox: [62, 232, 112, 285] },
+    { category: 'person', confidence: 0.71, bbox: [0, 240, 60, 330] },
+    { category: 'bottle', confidence: 0.77, bbox: [63, 290, 98, 365] },
+    { category: 'chair', confidence: 0.69, bbox: [430, 300, 580, 480] },
+    { category: 'chair', confidence: 0.58, bbox: [240, 350, 330, 480] },
+  ],
+};
+
 export function makeAlerts(now: number): Alert[] {
   return [
     {

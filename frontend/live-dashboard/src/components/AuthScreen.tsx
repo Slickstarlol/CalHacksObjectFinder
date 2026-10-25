@@ -7,6 +7,7 @@ import {
   type FormErrors,
   type RegisterForm,
 } from '../lib/auth';
+import { Logo } from './Icons';
 
 type Mode = 'signin' | 'register';
 
@@ -90,7 +91,7 @@ export function AuthScreen({ onSignIn, onSignUp, notice, checking, initialMode =
     <div className="auth-page">
       <main className="auth-card" aria-labelledby={`${id}-title`}>
         <div className="brand auth-brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <Logo size={32} />
           <span className="auth-brand-name">RecallAI</span>
         </div>
         <h1 id={`${id}-title`}>{register ? 'Create your account' : 'Sign in'}</h1>
