@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 import io
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -26,9 +27,10 @@ def old_repo(tmp_path):
     root = tmp_path / "repo"
     (root / "data" / "belongings" / "bag1").mkdir(parents=True)
     (root / "data" / "belongings" / "bag1" / "info.json").write_text('{"id": "bag1"}')
-    with sqlite3.connect(root / "memory.db") as db:
+    with closing(sqlite3.connect(root / "memory.db")) as db:
         db.execute("CREATE TABLE sightings (id INTEGER PRIMARY KEY, image_path TEXT)")
         db.execute("INSERT INTO sightings (image_path) VALUES ('snapshots/1.jpg')")
+        db.commit()
     (root / "memory.db-wal").write_bytes(b"wal")
     (root / "memory.db-shm").write_bytes(b"shm")
     (root / "snapshots" / "crops").mkdir(parents=True)
@@ -51,7 +53,7 @@ def test_migrate_moves_root_data_into_data_dir(old_repo):
     assert result == {"moved": 7, "skipped": 0}
     for name in ("memory.db", "memory.db-wal", "memory.db-shm"):
         assert (data / name).is_file() and not (old_repo / name).exists()
-    with sqlite3.connect(data / "memory.db") as db:   # stored paths unchanged
+    with closing(sqlite3.connect(data / "memory.db")) as db:   # stored paths unchanged
         assert db.execute("SELECT image_path FROM sightings").fetchall() == [("snapshots/1.jpg",)]
     assert (data / "snapshots" / "1.jpg").read_bytes() == b"frame"
     assert (data / "snapshots" / "crops" / "1.jpg").read_bytes() == b"crop"
