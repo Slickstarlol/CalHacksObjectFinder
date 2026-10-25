@@ -81,7 +81,8 @@ export async function askRecall(
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') throw e;
     throw new AskError(
-      "Can't reach the RecallAI server. Is server.py running on port 8000?"
+      "Can't reach the RecallAI server on port 8000. Start it with: " +
+        'python -m uvicorn recallai.api.server:app --host 0.0.0.0 --port 8000'
     );
   }
 

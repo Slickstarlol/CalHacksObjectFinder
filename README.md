@@ -24,7 +24,12 @@ data/             belongings/ (committed photos); memory.db and snapshots/ (git-
 models/           yolo11n.pt
 docs/             ARCHITECTURE.md, WORKFLOW.md, SPACETIME_CONTRACT.md
 scripts/          dev.ps1 / dev.sh helpers, migrate_layout.py
+launcher/         RecallAI.bat control panel: start/stop each step (see launcher/README.md)
 ```
+
+**Quick start:** double-click `launcher\RecallAI.bat`. A control panel opens in your
+browser with a switch for each step (SpacetimeDB, server, camera, dashboards...);
+**Start all** starts the switched-on steps one after another. See [launcher/README.md](launcher/README.md).
 
 How the parts fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Branches, PRs, CI and the per-part test commands: [docs/WORKFLOW.md](docs/WORKFLOW.md).

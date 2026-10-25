@@ -93,7 +93,7 @@ export default function App() {
       {serverDown && (
         <p className="banner" role="status">
           The dashboard cannot reach the server. In the project folder, run{' '}
-          <code>uvicorn server:app --host 127.0.0.1 --port 8000</code>
+          <code>python -m uvicorn recallai.api.server:app --host 127.0.0.1 --port 8000</code>{' '}(or start it from <code>launcher\RecallAI.bat</code>)
         </p>
       )}
 
