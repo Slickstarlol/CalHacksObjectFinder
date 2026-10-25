@@ -14,7 +14,7 @@ from recallai.ai import agent as agentmod
 from recallai.memory import db as dbmod
 from recallai.memory import temporal_memory as tm
 from recallai.ai import watcher
-from conftest import RED, make_object_image, register
+from conftest import RED, make_object_image, register, lazy_signed_in_client
 from recallai.vision.recognition import BelongingMatcher, HistogramEmbedder
 from recallai.vision.recorder import Detection, SightingRecorder
 from test_grok_features import FakeClient, fcall, message, reply
@@ -515,7 +515,9 @@ def api(mem, monkeypatch):
     from recallai.api import search
     from recallai.api import server
     monkeypatch.setattr(search, "BELONGINGS_DIR", mem.dir)
-    return TestClient(server.app)
+    # Signs in on the first request: that first account claims every
+    # ownerless belonging/sighting the test inserted before it.
+    return lazy_signed_in_client(server.app)
 
 
 def test_last_seen_endpoint(api, mem, day):
@@ -547,7 +549,7 @@ def test_ask_accepts_optional_timezone(api, mem, monkeypatch):
     from recallai.api import server
     seen = {}
     monkeypatch.setattr(server.agent, "ask",
-                        lambda q, h, tz=None: seen.update(tz=tz) or
+                        lambda q, h, tz=None, **kw: seen.update(tz=tz) or
                         {"answer": "ok", "sightings": [], "steps": []})
     assert api.post("/api/ask", json={"question": "hi"}).status_code == 200
     assert seen["tz"] is None

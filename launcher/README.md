@@ -10,7 +10,7 @@ panel opens in your browser at http://127.0.0.1:8765:
 | 1 | Check Grok key | off | `check_grok` exits OK |
 | 2 | SpacetimeDB | off | http://localhost:3000/v1/ping answers |
 | 3 | Publish SpacetimeDB module | off | `spacetime publish` exits OK |
-| 4 | RecallAI server | **on** | http://localhost:8000/api/belongings answers |
+| 4 | RecallAI server | **on** | http://localhost:8000/api/belongings answers (a 401 "sign in required" counts: the server is up) |
 | 5 | Camera | **on** | still running after 20 s |
 | 6 | Camera dashboard | **on** | http://localhost:5173 answers (opens in browser) |
 | 7 | Live dashboard (SpacetimeDB) | off | http://localhost:5174 answers (opens in browser) |
@@ -26,6 +26,11 @@ panel opens in your browser at http://127.0.0.1:8765:
 - **Stop all** stops everything (whole process trees, newest first).
   **Quit launcher** (or closing the black launcher window) stops everything too.
 - Your switch choices are remembered in `launcher/settings.local.json` (not in git).
+
+**First start:** when the dashboard opens, choose **Create an account**. The
+first account takes over everything recorded before accounts existed; later
+accounts only see their own belongings (see [docs/AUTH.md](../docs/AUTH.md)).
+The Camera step needs no account: it runs on this machine as a trusted device.
 
 ## Without the browser panel
 ```

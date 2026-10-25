@@ -53,10 +53,10 @@ describe('groupVisibleByBelonging / timelineFor', () => {
 describe('sortBelongings', () => {
   it('orders by most recently seen, never-seen last alphabetically', () => {
     const bs = [
-      { id: 'z', name: 'Zeta', category: '', photos: 0, tracking: true },
-      { id: 'b', name: 'B', category: '', photos: 0, tracking: true },
-      { id: 'y', name: 'Alpha', category: '', photos: 0, tracking: true },
-      { id: 'a', name: 'A', category: '', photos: 0, tracking: true },
+      { id: 'z', name: 'Zeta', category: '', photos: 0, tracking: true, owner: '1' },
+      { id: 'b', name: 'B', category: '', photos: 0, tracking: true, owner: '1' },
+      { id: 'y', name: 'Alpha', category: '', photos: 0, tracking: true, owner: '1' },
+      { id: 'a', name: 'A', category: '', photos: 0, tracking: true, owner: '1' },
     ];
     expect(sortBelongings(bs, latestVisibleByBelonging(rows)).map(b => b.id)).toEqual(['a', 'b', 'y', 'z']);
   });
@@ -65,7 +65,7 @@ describe('sortBelongings', () => {
 describe('activeAlerts', () => {
   const al = (id: bigint, at: bigint, dismissed = false): Alert => ({
     id, belongingId: 'a', belongingName: 'A', sightingId: 0n, reason: '', urgency: 'low',
-    message: '', createdAtMicros: at, dismissed,
+    message: '', createdAtMicros: at, dismissed, owner: '1',
   });
   it('drops dismissed and sorts newest first', () => {
     expect(activeAlerts([al(1n, 10n), al(2n, 30n, true), al(3n, 20n), al(4n, 20n)]).map(a => a.id)).toEqual([4n, 3n, 1n]);

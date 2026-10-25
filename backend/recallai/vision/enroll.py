@@ -10,6 +10,11 @@ The same YOLO category has to hold for all five. Confusable classes
 (a mouse YOLO sometimes calls a cell phone) are a failure here on purpose:
 the five photos are how the tracker learns the object, so they must be
 the same label.
+
+Ownership: the dashboard user who pressed Add owns the session; the server
+hands their user id to the camera with the enroll status, and the new
+belonging's info.json gets that "owner_id". Unfinished items and name
+de-duplication ("cell phone 2") are per owner.
 """
 
 from __future__ import annotations
@@ -207,8 +212,12 @@ def _write_info(folder, info):
     (folder / "info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
 
 
-def _unique_name(base_dir, category):
-    taken = {b.name.lower() for b in load_belongings(base_dir)}
+def _mine(base_dir, owner_id):
+    return [b for b in load_belongings(base_dir) if b.owner_id == owner_id]
+
+
+def _unique_name(base_dir, category, owner_id=None):
+    taken = {b.name.lower() for b in _mine(base_dir, owner_id)}
     if category.lower() not in taken:
         return category
     n = 2
@@ -217,46 +226,51 @@ def _unique_name(base_dir, category):
     return f"{category} {n}"
 
 
-def _unfinished(base_dir, category):
-    """The in-progress item of this category with the most angles kept."""
-    items = [b for b in load_belongings(base_dir)
+def _unfinished(base_dir, category, owner_id=None):
+    """This owner's in-progress item of this category with the most angles kept."""
+    items = [b for b in _mine(base_dir, owner_id)
              if b.category == category and not b.tracking]
     if not items:
         return None
     return max(items, key=lambda b: len(b.reference_paths))
 
 
-def _begin(base_dir, category):
-    name = _unique_name(base_dir, category)
+def _begin(base_dir, category, owner_id=None):
+    name = _unique_name(base_dir, category, owner_id)
     item_id = uuid.uuid4().hex[:12]
     folder = Path(base_dir) / item_id
     folder.mkdir(parents=True)
     info = {"id": item_id, "name": name, "category": category, "tracking": False}
+    if owner_id is not None:
+        info["owner_id"] = owner_id
     _write_info(folder, info)
     return folder, info
 
 
-def save_angle(base_dir, category, crop, belonging_id=None):
+def save_angle(base_dir, category, crop, belonging_id=None, owner_id=None):
     """Append one reference crop. Photos already saved are left in place.
 
+    owner_id: the account enrolling it (None = ownerless, claimed later).
     Returns (info, count). info['tracking'] is true once `ANGLES` photos exist.
     """
     base_dir = Path(base_dir)
+    owner_id = None if owner_id is None else int(owner_id)
     folder = info = None
     if belonging_id:
         folder = base_dir / belonging_id
         info_path = folder / "info.json"
         if info_path.is_file():
             info = json.loads(info_path.read_text(encoding="utf-8"))
-            if info.get("category") != category or info.get("tracking"):
+            if (info.get("category") != category or info.get("tracking")
+                    or info.get("owner_id") != owner_id):
                 folder = info = None
     if info is None:
-        existing = _unfinished(base_dir, category)
+        existing = _unfinished(base_dir, category, owner_id)
         if existing is not None:
             folder = existing.folder
             info = json.loads((folder / "info.json").read_text(encoding="utf-8"))
         else:
-            folder, info = _begin(base_dir, category)
+            folder, info = _begin(base_dir, category, owner_id)
     save_reference(folder, crop)
     count = len(list(folder.glob("reference_*.jpg")))
     if count >= ANGLES:
@@ -265,5 +279,5 @@ def save_angle(base_dir, category, crop, belonging_id=None):
     return info, count
 
 
-def save_angle_default(category, crop, belonging_id=None):
-    return save_angle(BELONGINGS_DIR, category, crop, belonging_id)
+def save_angle_default(category, crop, belonging_id=None, owner_id=None):
+    return save_angle(BELONGINGS_DIR, category, crop, belonging_id, owner_id)

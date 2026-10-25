@@ -1,32 +1,43 @@
-"""RecallAI web server: phone GPS relay, search page, Grok agent, alerts.
+"""RecallAI web server: accounts, phone GPS relay, search page, Grok agent, alerts.
 
     python -m uvicorn recallai.api.server:app --host 0.0.0.0 --port 8000
+
+Accounts (see docs/AUTH.md): every route that reads or changes user data
+needs `Authorization: Bearer <token>` from /api/auth/login or /register and
+only sees the caller's own belongings, sightings, alerts and people.
+Device-only routes (the camera process) are guarded by auth.require_device.
 """
 
 import base64
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
 import os
 from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from recallai import paths
+from recallai import owners, paths
 from recallai.memory import db as dbmod
 from recallai.ai.agent import RecallAgent, MemoryTools
 from recallai.memory.people import router as people_router
+from recallai.api import search
+from recallai.api.auth import current_user, media_user, require_device
+from recallai.api.auth import router as auth_router
 from recallai.api.search import router as search_router
 from recallai.vision.enroll import ANGLES
 from recallai.sync.spacetime_bridge import SpacetimeBridge
 from recallai.ai.watcher import Watcher
+from recallai.vision.recognition import load_belongings, set_owner
 
-SNAPSHOT_DIR = paths.SNAPSHOT_DIR   # data/snapshots, served at /snapshots
+SNAPSHOT_DIR = paths.SNAPSHOT_DIR   # data/snapshots, served (per owner) at /snapshots
 WEB_DIST = paths.WEB_DIST           # frontend/live-dashboard/dist (npm run build)
 (SNAPSHOT_DIR / "crops").mkdir(parents=True, exist_ok=True)
 GPS_FRESH_SECONDS = 120
@@ -34,19 +45,34 @@ WATCH_INTERVAL = 60
 
 dbmod.init_db()
 
-latest_gps = None
+# Phone GPS, per signed-in user: {user_id: {"latitude", "longitude",
+# "accuracy", "timestamp"}}. In memory only, like before accounts.
+_gps_lock = threading.Lock()
+_gps = {}
 
 
-def fresh_gps():
-    """Latest phone GPS if it's recent enough to trust, else None."""
-    if not latest_gps:
+def fresh_gps(owner_id=None):
+    """That user's latest phone GPS if it's recent enough to trust, else None."""
+    if owner_id is None:
+        return None
+    with _gps_lock:
+        fix = _gps.get(int(owner_id))
+    if not fix:
         return None
     age = (datetime.now(timezone.utc)
-           - datetime.fromisoformat(latest_gps["timestamp"])).total_seconds()
-    return latest_gps if age <= GPS_FRESH_SECONDS else None
+           - datetime.fromisoformat(fix["timestamp"])).total_seconds()
+    return dict(fix) if age <= GPS_FRESH_SECONDS else None
 
 
-agent = RecallAgent(tools=MemoryTools(gps_provider=fresh_gps))
+def reset_gps():
+    """Test helper."""
+    with _gps_lock:
+        _gps.clear()
+
+
+# The Grok agent is shared; each request gets a copy of its tools bound to
+# the caller's user id and GPS (MemoryTools.for_request).
+agent = RecallAgent(tools=MemoryTools())
 
 
 @asynccontextmanager
@@ -83,11 +109,45 @@ app.add_middleware(
         "http://127.0.0.1:5174",
     ],
     allow_methods=["*"],
-    allow_headers=["*"],
+    # "*" already covers Authorization; listed for clarity.
+    allow_headers=["Authorization", "Content-Type", "*"],
 )
+app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(people_router)
-app.mount("/snapshots", StaticFiles(directory=str(SNAPSHOT_DIR)), name="snapshots")
+
+
+def _belongings_dir():
+    return search.BELONGINGS_DIR   # read at call time (tests patch it)
+
+
+def my_belonging_ids(user_id):
+    return {b.id for b in owners.owned(load_belongings(_belongings_dir()), user_id)}
+
+
+# ---------------------------------------------------------------------------
+# Snapshots: only the owner of the sighting a file belongs to may load it.
+# <img> tags can't send headers, so ?token= is accepted here (media_user).
+# ---------------------------------------------------------------------------
+@app.get("/snapshots/{path:path}")
+def snapshot(path: str, user=Depends(media_user)):
+    rel = PurePosixPath(path.replace("\\", "/"))
+    if not rel.parts or rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(404, "Not found")
+    stored = "snapshots/" + rel.as_posix()
+    variants = (stored, stored.replace("/", "\\"))
+    with dbmod.connect() as db:
+        row = db.execute(
+            "SELECT 1 FROM sightings WHERE owner_id = ? AND (image_path IN (?, ?) "
+            "OR crop_path IN (?, ?)) LIMIT 1",
+            (user["id"], *variants, *variants)).fetchone()
+    if row is None:
+        raise HTTPException(404, "Not found")
+    base = Path(SNAPSHOT_DIR).resolve()
+    full = (base / Path(*rel.parts)).resolve()
+    if base not in full.parents or not full.is_file():
+        raise HTTPException(404, "Not found")
+    return FileResponse(full, headers={"Cache-Control": "private, max-age=3600"})
 
 # Latest annotated frame pushed by webcam.py. The React dashboard reads it.
 LIVE_STALE_SECONDS = 2.5
@@ -131,8 +191,9 @@ def _live_view():
 
 
 @app.post("/api/live")
-def push_live(body: LiveUpdate):
-    """webcam.py posts the annotated frame and the objects it is tracking."""
+def push_live(body: LiveUpdate, _device=Depends(require_device)):
+    """webcam.py posts the annotated frame and the objects it is tracking.
+    Device-only: from this machine, or with RECALLAI_DEVICE_KEY."""
     jpeg = b""
     if body.frame_jpeg_b64:
         try:
@@ -157,13 +218,15 @@ def push_live(body: LiveUpdate):
         _live["updated_at"] = time.monotonic()
     if body.enroll:
         _apply_enroll(body.enroll)
+    # The device sees owner_id: it writes it into the new belonging's info.json.
     return {"status": "ok", "enroll": enroll_view()}
 
 
 # Camera enrollment. webcam.py does the seeing; this is the prompt the
 # dashboard shows, plus the switch that tells the camera to collect angles.
+# One camera = one session at a time, owned by the user who pressed Add.
 _enroll_lock = threading.Lock()
-_enroll = {
+_IDLE_ENROLL = {
     "active": False,
     "phase": "idle",
     "message": "",
@@ -172,12 +235,32 @@ _enroll = {
     "saved": 0,
     "needed": ANGLES,
     "belonging_id": None,
+    "owner_id": None,
 }
+_enroll = dict(_IDLE_ENROLL)
+_SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 def enroll_view():
+    """Full state, including owner_id (for the device)."""
     with _enroll_lock:
         return dict(_enroll)
+
+
+def enroll_view_for(user_id):
+    """What one user's dashboard may see. Another account's session shows
+    up only as "camera busy", without its item name or id."""
+    view = enroll_view()
+    owner = view.pop("owner_id")
+    if owner is None or owner == user_id:
+        view["mine"] = owner == user_id
+        return view
+    idle = {k: v for k, v in _IDLE_ENROLL.items() if k != "owner_id"}
+    if view["active"]:
+        return {**idle, "active": True, "phase": "busy", "mine": False,
+                "message": "The camera is adding another account's item. "
+                           "Try again in a moment."}
+    return {**idle, "mine": False}
 
 
 def _apply_enroll(report):
@@ -195,65 +278,77 @@ def _apply_enroll(report):
         if report.get("phase") == "done" or saved >= _enroll["needed"]:
             _enroll["active"] = False
             _enroll["phase"] = "done"
+        owner, bid = _enroll["owner_id"], _enroll["belonging_id"]
+    # Belt and braces: an older camera process may not write owner_id itself.
+    if owner is not None and isinstance(bid, str) and _SAFE_ID.fullmatch(bid):
+        set_owner(Path(_belongings_dir()) / bid, owner)
 
 
 def reset_enroll():
     """Test helper."""
     with _enroll_lock:
-        _enroll.update({
-            "active": False,
-            "phase": "idle",
-            "message": "",
-            "category": None,
-            "name": None,
-            "saved": 0,
-            "needed": ANGLES,
-            "belonging_id": None,
-        })
+        _enroll.clear()
+        _enroll.update(_IDLE_ENROLL)
 
 
 @app.get("/api/enroll")
-def enroll_status():
-    return enroll_view()
+def enroll_status(user=Depends(current_user)):
+    return enroll_view_for(user["id"])
 
 
 @app.post("/api/enroll/start")
-def enroll_start():
+def enroll_start(user=Depends(current_user)):
     with _enroll_lock:
+        if _enroll["active"] and _enroll["owner_id"] != user["id"]:
+            raise HTTPException(409, "The camera is adding another account's item. "
+                                     "Try again in a moment.")
         if not _enroll["active"]:
-            _enroll.update({
-                "active": True,
-                "phase": "hold",
-                "message": "Show one object and hold it still.",
-                "category": None,
-                "name": None,
-                "saved": 0,
-                "needed": ANGLES,
-                "belonging_id": None,
-            })
-        return dict(_enroll)
+            _enroll.clear()
+            _enroll.update({**_IDLE_ENROLL, "active": True, "phase": "hold",
+                            "message": "Show one object and hold it still.",
+                            "owner_id": user["id"]})
+    return enroll_view_for(user["id"])
 
 
 @app.post("/api/enroll/cancel")
-def enroll_cancel():
+def enroll_cancel(user=Depends(current_user)):
     """Stop collecting. Angles already saved stay on disk."""
     with _enroll_lock:
-        _enroll["active"] = False
-        if _enroll["phase"] != "done":
-            _enroll["phase"] = "idle"
-            _enroll["message"] = ""
-        return dict(_enroll)
+        if _enroll["owner_id"] not in (None, user["id"]) and _enroll["active"]:
+            raise HTTPException(409, "Only the account that started adding "
+                                     "this item can cancel it.")
+        if _enroll["owner_id"] in (None, user["id"]):
+            _enroll["active"] = False
+            if _enroll["phase"] != "done":
+                _enroll["phase"] = "idle"
+                _enroll["message"] = ""
+    return enroll_view_for(user["id"])
 
 
 @app.get("/api/live")
-def live_status():
+def live_status(user=Depends(current_user)):
+    """Camera status. `in_view` (recognized belongings) lists only the
+    caller's items; `detections` are generic YOLO categories (no owner)."""
     snap = _live_view()
     snap.pop("jpeg", None)
+    mine = my_belonging_ids(user["id"])
+    snap["in_view"] = [i for i in snap["in_view"]
+                       if isinstance(i, dict) and i.get("belonging_id") in mine]
     return snap
 
 
+@app.get("/api/device/gps")
+def device_gps(_device=Depends(require_device)):
+    """Device-only: every user's fresh phone GPS, so the camera can attach
+    each belonging's OWNER's location to its sighting."""
+    with _gps_lock:
+        ids = list(_gps)
+    by_owner = {str(uid): fix for uid in ids if (fix := fresh_gps(uid))}
+    return {"by_owner": by_owner}
+
+
 @app.get("/api/live/frame.jpg")
-def live_frame():
+def live_frame(_user=Depends(media_user)):
     snap = _live_view()
     if not snap["online"] or not snap["jpeg"]:
         raise HTTPException(404, "Camera offline")
@@ -265,7 +360,7 @@ def live_frame():
 
 
 @app.get("/api/live/stream")
-def live_stream():
+def live_stream(_user=Depends(media_user)):
     """MJPEG mirror of the Python camera, for an <img> tag."""
     def frames():
         while True:
@@ -306,32 +401,46 @@ def home():
     return (paths.STATIC_DIR / "gps.html").read_text(encoding="utf-8")
 
 
+@app.get("/auth.js")
+def auth_script():
+    """Sign-in helper shared by the plain HTML pages (gps.html, search.html)."""
+    return Response((paths.STATIC_DIR / "auth.js").read_text(encoding="utf-8"),
+                    media_type="text/javascript",
+                    headers={"Cache-Control": "no-cache"})
+
+
 @app.post("/gps")
-def update_gps(data: GPSData):
-    global latest_gps
-    latest_gps = {
-        "latitude": data.latitude,
-        "longitude": data.longitude,
-        "accuracy": data.accuracy,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+def update_gps(data: GPSData, user=Depends(current_user)):
+    """The signed-in user's phone location (it is theirs, not shared)."""
+    with _gps_lock:
+        _gps[user["id"]] = {
+            "latitude": data.latitude,
+            "longitude": data.longitude,
+            "accuracy": data.accuracy,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
     return {"status": "GPS received"}
 
 
 @app.get("/gps/latest")
-def get_latest_gps():
-    return latest_gps or {"status": "No GPS data"}
+def get_latest_gps(user=Depends(current_user)):
+    with _gps_lock:
+        fix = _gps.get(user["id"])
+    return dict(fix) if fix else {"status": "No GPS data"}
 
 
 # ---------------------------------------------------------------------------
 # Grok agent
 # ---------------------------------------------------------------------------
 @app.post("/api/ask")
-async def ask(q: Question):
-    """Natural-language question about your belongings -> Grok's answer."""
+async def ask(q: Question, user=Depends(current_user)):
+    """Natural-language question about your belongings -> Grok's answer.
+    Grok's tools only see the caller's data (owner fixed here, not by the model)."""
+    uid = user["id"]
     try:
         return await run_in_threadpool(
-            agent.ask, q.question, [t.model_dump() for t in q.history], q.timezone)
+            agent.ask, q.question, [t.model_dump() for t in q.history], q.timezone,
+            owner_id=uid, gps_provider=lambda: fresh_gps(uid))
     except Exception as e:
         raise HTTPException(502, f"Grok request failed: {e}")
 
@@ -340,20 +449,24 @@ async def ask(q: Question):
 # Proactive alerts
 # ---------------------------------------------------------------------------
 @app.get("/api/alerts")
-def list_alerts(include_dismissed: bool = False):
+def list_alerts(include_dismissed: bool = False, user=Depends(current_user)):
+    """Your alerts only."""
     with dbmod.connect() as db:
         rows = db.execute(
             "SELECT a.*, s.crop_path, s.description, s.timestamp AS seen_at "
             "FROM alerts a LEFT JOIN sightings s ON s.id = a.sighting_id "
-            + ("" if include_dismissed else "WHERE a.dismissed = 0 ")
-            + "ORDER BY a.created_at DESC LIMIT 20").fetchall()
+            "AND s.owner_id = a.owner_id WHERE a.owner_id = ? "
+            + ("" if include_dismissed else "AND a.dismissed = 0 ")
+            + "ORDER BY a.created_at DESC LIMIT 20", (user["id"],)).fetchall()
     return [dict(r) for r in rows]
 
 
 @app.post("/api/alerts/{alert_id}/dismiss")
-def dismiss_alert(alert_id: int):
+def dismiss_alert(alert_id: int, user=Depends(current_user)):
+    """Dismiss one of your alerts (someone else's id -> 404, like a missing one)."""
     with dbmod.connect() as db:
-        cur = db.execute("UPDATE alerts SET dismissed=1 WHERE id=?", (alert_id,))
+        cur = db.execute("UPDATE alerts SET dismissed=1 WHERE id=? AND owner_id=?",
+                         (alert_id, user["id"]))
         db.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "No such alert")

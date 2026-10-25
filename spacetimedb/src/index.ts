@@ -14,6 +14,12 @@
 //   - times are microseconds since the Unix epoch (i64)
 //   - "missing" text is ""        - missing GPS is hasGps = false
 //   - verified: -1 unchecked, 0 Grok says not yours, 1 Grok confirmed
+//   - owner: the RecallAI account (users.id as a string) the row belongs to,
+//     "" = ownerless (recorded before accounts existed). The live dashboard
+//     subscribes only to the signed-in user's rows. NOTE: these tables are
+//     public, so `owner` is filtering, not access control; real per-user
+//     enforcement would need SpacetimeDB row-level security / views keyed on
+//     an identity that SpacetimeDB can verify (see docs/AUTH.md).
 
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
@@ -29,6 +35,8 @@ const belonging = table(
     // (info.json "tracking": false); the matcher ignores it until then.
     // Default true lets an already-published database add this column in place.
     tracking: t.bool().default(true),
+    // Default '' lets an already-published database add the column in place.
+    owner: t.string().default(''),
   }
 );
 
@@ -52,6 +60,7 @@ const sighting = table(
     hasGps: t.bool(),
     latitude: t.f64(),
     longitude: t.f64(),
+    owner: t.string().default(''),
   }
 );
 
@@ -68,6 +77,7 @@ const alert = table(
     message: t.string(),
     createdAtMicros: t.i64(),
     dismissed: t.bool(),
+    owner: t.string().default(''),
   }
 );
 
@@ -82,6 +92,7 @@ const person = table(
     knownSince: t.string(), // YYYY-MM-DD, "" if unknown
     createdAtMicros: t.i64(),
     updatedAtMicros: t.i64(),
+    owner: t.string().default(''),
   }
 );
 
@@ -123,6 +134,7 @@ export const upsert_belonging = spacetimedb.reducer(
     category: t.string(),
     photos: t.u32(),
     tracking: t.bool(),
+    owner: t.string(),
   },
   (ctx, args) => {
     requireBridge(ctx);
@@ -158,6 +170,7 @@ export const upsert_sighting = spacetimedb.reducer(
     hasGps: t.bool(),
     latitude: t.f64(),
     longitude: t.f64(),
+    owner: t.string(),
   },
   (ctx, args) => {
     requireBridge(ctx);
@@ -188,6 +201,7 @@ export const upsert_alert = spacetimedb.reducer(
     message: t.string(),
     createdAtMicros: t.i64(),
     dismissed: t.bool(),
+    owner: t.string(),
   },
   (ctx, args) => {
     requireBridge(ctx);
@@ -221,6 +235,7 @@ export const upsert_person = spacetimedb.reducer(
     knownSince: t.string(),
     createdAtMicros: t.i64(),
     updatedAtMicros: t.i64(),
+    owner: t.string(),
   },
   (ctx, args) => {
     requireBridge(ctx);
@@ -238,7 +253,9 @@ export const delete_person = spacetimedb.reducer(
   }
 );
 
-/** Called from the React dashboard by anyone viewing it. */
+/** Called from the React dashboard by anyone viewing it. SpacetimeDB can't
+ * check RecallAI accounts, so this can't verify the caller owns the alert;
+ * the dashboard only offers it for the signed-in user's own alerts. */
 export const dismiss_alert = spacetimedb.reducer(
   { id: t.u64() },
   (ctx, { id }) => {

@@ -15,4 +15,4 @@ requires-python = ">=3.10"
 include = ["recallai*"]
 
 [tool.setuptools.package-data]
-recallai = ["api/static/*.html"]
+recallai = ["api/static/*.html", "api/static/*.js"]

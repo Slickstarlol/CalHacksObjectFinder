@@ -27,7 +27,7 @@ const I64_MAX = (1n << 63n) - 1n;
 const I64_MIN = -(1n << 63n);
 
 function belongingArgs(over: Partial<BelongingArgs> = {}): BelongingArgs {
-  return { id: 'mouse1', name: 'My Mouse', category: 'mouse', photos: 3, tracking: true, ...over };
+  return { id: 'mouse1', name: 'My Mouse', category: 'mouse', photos: 3, tracking: true, owner: '1', ...over };
 }
 
 function personArgs(over: Partial<PersonArgs> = {}): PersonArgs {
@@ -39,6 +39,7 @@ function personArgs(over: Partial<PersonArgs> = {}): PersonArgs {
     knownSince: '2024-09-01',
     createdAtMicros: 1792860000000000n,
     updatedAtMicros: 1792860000000001n,
+    owner: '1',
     ...over,
   };
 }
@@ -61,6 +62,7 @@ function sightingArgs(over: Partial<SightingArgs> = {}): SightingArgs {
     hasGps: true,
     latitude: 33.640495,
     longitude: -117.844296,
+    owner: '1',
     ...over,
   };
 }
@@ -76,6 +78,7 @@ function alertArgs(over: Partial<AlertArgs> = {}): AlertArgs {
     message: 'Did you forget your mouse?',
     createdAtMicros: 1792860000000000n,
     dismissed: false,
+    owner: '1',
     ...over,
   };
 }
@@ -245,7 +248,7 @@ describe('upsert_belonging / delete_belonging', () => {
 });
 
 describe('upsert_sighting / delete_sighting', () => {
-  it('round-trips all 16 fields exactly', () => {
+  it('round-trips all 17 fields (incl. owner) exactly', () => {
     const h = setup();
     const cases: SightingArgs[] = [
       sightingArgs(),
@@ -279,7 +282,7 @@ describe('upsert_sighting / delete_sighting', () => {
     for (const s of cases) {
       const row = h.db.sighting.id.find(s.id);
       expect(row).toEqual(s);
-      expect(Object.keys(row!)).toHaveLength(16);
+      expect(Object.keys(row!)).toHaveLength(17);
       expect(typeof row!.id).toBe('bigint');
       expect(typeof row!.seenAtMicros).toBe('bigint');
       expect(typeof row!.matchScore).toBe('number');
@@ -507,7 +510,7 @@ describe('contract smoke', () => {
     expect(h.db.sighting.id.find(7n)?.belongingName).toBe('My Mouse');
     expect(() =>
       h.withReducerTx(BROWSER, ctx =>
-        m.upsert_belonging(ctx, { id: 'x', name: 'X', category: 'mouse', photos: 1, tracking: true })
+        m.upsert_belonging(ctx, { id: 'x', name: 'X', category: 'mouse', photos: 1, tracking: true, owner: '1' })
       )
     ).toThrow(/bridge/);
     h.withReducerTx(BRIDGE, ctx => m.upsert_alert(ctx, alertArgs()));
@@ -523,7 +526,8 @@ describe('delete_alert (added after review)', () => {
     const s = TestAuth.fromJwtPayload(JSON.stringify({ iss: 't', sub: 'stranger' }), new ConnectionId(92n));
     h.withReducerTx(b, ctx => m.register_bridge(ctx, {}));
     h.withReducerTx(b, ctx => m.upsert_alert(ctx, { id: 5n, belongingId: 'm', belongingName: 'M',
-      sightingId: 0n, reason: 'out_of_sight', urgency: 'low', message: 'x', createdAtMicros: 1n, dismissed: false }));
+      sightingId: 0n, reason: 'out_of_sight', urgency: 'low', message: 'x', createdAtMicros: 1n, dismissed: false,
+      owner: '' }));
     expect(() => h.withReducerTx(s, ctx => m.delete_alert(ctx, { id: 5n }))).toThrow(/bridge/);
     expect(h.db.alert.id.find(5n)).not.toBeNull();
     h.withReducerTx(b, ctx => m.delete_alert(ctx, { id: 5n }));
@@ -545,7 +549,7 @@ describe('belonging.tracking (enrollment in progress)', () => {
     expect(row.tracking).toBe(true);
     expect(row.photos).toBe(5);
     // tracking is the LAST column, so [id, name, category, photos] keep their order.
-    expect(Object.keys(row)).toEqual(['id', 'name', 'category', 'photos', 'tracking']);
+    expect(Object.keys(row)).toEqual(['id', 'name', 'category', 'photos', 'tracking', 'owner']);
     expect(counts(h).belonging).toBe(1);
   });
 });
@@ -562,7 +566,7 @@ describe('upsert_person / delete_person', () => {
     expect(counts(h).person).toBe(2);
     const row = h.db.person.id.find(1n)!;
     expect(Object.keys(row)).toEqual(['id', 'name', 'description', 'relationship',
-      'knownSince', 'createdAtMicros', 'updatedAtMicros']);
+      'knownSince', 'createdAtMicros', 'updatedAtMicros', 'owner']);
     expect(typeof row.id).toBe('bigint');
     expect(typeof row.createdAtMicros).toBe('bigint');
   });
@@ -604,5 +608,36 @@ describe('upsert_person / delete_person', () => {
     expect(h.db.person.id.find(1n)).toBeNull();
     expect(() => h.withReducerTx(BRIDGE, ctx => m.delete_person(ctx, { id: 1n }))).not.toThrow();
     expect(counts(h).person).toBe(0);
+  });
+});
+
+describe('owner column (per-account rows)', () => {
+  it('stores each row\'s owner, including "" for ownerless legacy rows', () => {
+    const h = createModuleTestHarness(spacetime, m);
+    h.withReducerTx(BRIDGE, ctx => m.register_bridge(ctx, {}));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_belonging(ctx, belongingArgs({ owner: '2' })));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_sighting(ctx, sightingArgs({ owner: '2' })));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_alert(ctx, alertArgs({ owner: '' })));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs({ owner: '3' })));
+    expect(h.db.belonging.id.find('mouse1')?.owner).toBe('2');
+    expect(h.db.sighting.id.find(7n)?.owner).toBe('2');
+    expect(h.db.alert.id.find(1n)?.owner).toBe('');
+    expect(h.db.person.id.find(1n)?.owner).toBe('3');
+  });
+
+  it('a later upsert can move a claimed row from "" to its owner', () => {
+    const h = createModuleTestHarness(spacetime, m);
+    h.withReducerTx(BRIDGE, ctx => m.register_bridge(ctx, {}));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_sighting(ctx, sightingArgs({ owner: '' })));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_sighting(ctx, sightingArgs({ owner: '1' })));
+    expect(h.db.sighting.id.find(7n)?.owner).toBe('1');
+  });
+
+  it('dismiss_alert keeps working and leaves the owner alone', () => {
+    const h = createModuleTestHarness(spacetime, m);
+    h.withReducerTx(BRIDGE, ctx => m.register_bridge(ctx, {}));
+    h.withReducerTx(BRIDGE, ctx => m.upsert_alert(ctx, alertArgs({ owner: '4' })));
+    h.withReducerTx(BROWSER, ctx => m.dismiss_alert(ctx, { id: 1n }));
+    expect(h.db.alert.id.find(1n)).toMatchObject({ dismissed: true, owner: '4' });
   });
 });

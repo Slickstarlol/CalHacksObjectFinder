@@ -29,11 +29,15 @@ button {
 <button onclick="startGPS()">Enable GPS</button>
 <button onclick="stopGPS()">Stop GPS</button>
 
-<p id="status">GPS disconnected</p>
+<p id="status" role="status">GPS disconnected</p>
 
 <div id="alerts" style="max-width:480px;margin:20px auto;text-align:left"></div>
 
+<script src="/auth.js"></script>
 <script>
+// Your phone's location is stored for YOUR account only: the camera
+// attaches it to sightings of your belongings, and the watcher uses it
+// to notice when you walk away from them.
 let watchID = null;
 
 function startGPS() {
@@ -54,7 +58,7 @@ function startGPS() {
             };
 
             try {
-                const response = await fetch("/gps", {
+                const response = await RecallAuth.fetch("/gps", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -96,7 +100,9 @@ function startGPS() {
 const shown = new Set();
 async function pollAlerts() {
     try {
-        const alerts = await (await fetch("/api/alerts")).json();
+        const r = await RecallAuth.fetch("/api/alerts");
+        if (!r.ok) return;
+        const alerts = await r.json();
         const box = document.getElementById("alerts");
         box.innerHTML = "";
         for (const a of alerts) {
@@ -112,8 +118,10 @@ async function pollAlerts() {
         }
     } catch (e) { /* laptop offline */ }
 }
-pollAlerts();
-setInterval(pollAlerts, 20000);
+RecallAuth.require(() => {
+    pollAlerts();
+    setInterval(pollAlerts, 20000);
+});
 
 function stopGPS() {
     if (watchID !== null) {

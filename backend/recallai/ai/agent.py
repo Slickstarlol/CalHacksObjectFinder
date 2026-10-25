@@ -19,6 +19,7 @@ import math
 import re
 from datetime import datetime, timezone
 
+from recallai import owners
 from recallai.memory import db as dbmod
 from recallai.memory import temporal_memory as tm
 from recallai.ai.llm import (AGENT_MODEL, VISION_MODEL, function_calls, function_tool,
@@ -193,8 +194,15 @@ def summarize(row, gps=None, now=None, tz=None):
 # Tools
 # ---------------------------------------------------------------------------
 class MemoryTools:
+    """The agent's tools. Every lookup is limited to `owner_id` (the signed-in
+    user; owners.ANY only for the single-user CLI). The owner is fixed by the
+    server per request and is never a tool argument, so the model can't ask
+    for someone else's data."""
+
     def __init__(self, db_path=None, belongings_dir=BELONGINGS_DIR,
-                 gps_provider=lambda: None, now=None, vision=None):
+                 gps_provider=lambda: None, now=None, vision=None,
+                 owner_id=owners.ANY):
+        self.owner_id = owners.normalize(owner_id)
         self.db_path = db_path
         self.belongings_dir = belongings_dir
         self.gps_provider = gps_provider
@@ -204,13 +212,24 @@ class MemoryTools:
         self.referenced = set()
         self.lookups = []  # historical lookups, shown as evidence cards in the UI
 
-    def for_request(self, tz_name=None):
-        """Per-request copy, so one user's timezone and citations never leak
-        into another request on the shared server agent."""
+    def for_request(self, tz_name=None, owner_id=None, gps_provider=None):
+        """Per-request copy, so one user's timezone, citations, GPS and owner
+        never leak into another request on the shared server agent.
+        owner_id None keeps this instance's owner."""
         tools = copy.copy(self)
         tools.tz = tm.get_timezone(tz_name) if tz_name else self.tz
         tools.referenced, tools.lookups = set(), []
+        if owner_id is not None:
+            tools.owner_id = owners.normalize(owner_id)
+        if gps_provider is not None:
+            tools.gps_provider = gps_provider
         return tools
+
+    def _own(self, column="owner_id"):
+        return owners.clause(self.owner_id, column)
+
+    def _belongings(self):
+        return owners.owned(load_belongings(self.belongings_dir), self.owner_id)
 
     def _now(self):
         return self.now or datetime.now(timezone.utc)
@@ -229,22 +248,24 @@ class MemoryTools:
     def tool_list_belongings(self, not_seen_for_minutes=None):
         if not_seen_for_minutes is not None:
             inv = tm.get_items_not_seen_since(float(not_seen_for_minutes) * 60, self.db_path,
-                                              self._now(), self.belongings_dir, tz=self.tz)
+                                              self._now(), self.belongings_dir, tz=self.tz,
+                                              owner_id=self.owner_id)
             for group in ("not_seen_since", "seen_within"):
                 self.referenced.update(i["sighting_id"] for i in inv[group])
                 inv[group] = [_for_model(i) for i in inv[group]]
             return json.dumps(inv, indent=1)
         out = []
+        own, own_params = self._own()
         with dbmod.connect(self.db_path) as db:
-            for b in load_belongings(self.belongings_dir):
+            for b in self._belongings():
                 if not b.tracking:
                     continue
                 row = db.execute(
-                    f"SELECT * FROM sightings WHERE belonging_id=? AND {VISIBLE} "
-                    "ORDER BY timestamp DESC, id DESC LIMIT 1", (b.id,)).fetchone()
+                    f"SELECT * FROM sightings WHERE belonging_id=? AND {own} AND {VISIBLE} "
+                    "ORDER BY timestamp DESC, id DESC LIMIT 1", (b.id, *own_params)).fetchone()
                 n = db.execute(
-                    f"SELECT COUNT(*) FROM sightings WHERE belonging_id=? AND {VISIBLE}",
-                    (b.id,)).fetchone()[0]
+                    f"SELECT COUNT(*) FROM sightings WHERE belonging_id=? AND {own} "
+                    f"AND {VISIBLE}", (b.id, *own_params)).fetchone()[0]
                 out.append({
                     "id": b.id, "name": b.name, "kind": b.category,
                     "total_sightings": n,
@@ -258,7 +279,7 @@ class MemoryTools:
         return json.dumps(out, indent=1)
 
     def _resolve(self, db, belonging):
-        items = [b for b in load_belongings(self.belongings_dir) if b.tracking]
+        items = [b for b in self._belongings() if b.tracking]
         q = belonging.strip().lower()
         ids = [b.id for b in items if b.id == q]
         if not ids:
@@ -272,7 +293,8 @@ class MemoryTools:
     def tool_search_sightings(self, belonging=None, text=None, event=None,
                               since_minutes=None, before_minutes=None,
                               start_time=None, end_time=None, limit=15):
-        where, params = [VISIBLE], []
+        own, own_params = self._own()
+        where, params = [VISIBLE, own], list(own_params)
         with dbmod.connect(self.db_path) as db:
             if belonging:
                 ids = self._resolve(db, belonging)
@@ -327,14 +349,15 @@ class MemoryTools:
             if at_time and around_minutes:
                 obs = tm.get_sighting_nearest_time(
                     bid, at_time, float(around_minutes) * 60, self.db_path,
-                    self._now(), self.tz)
+                    self._now(), self.tz, owner_id=self.owner_id)
                 if obs is None:
                     obs = {"belonging_id": bid, "requested_at": at_time,
                            "message": f"No sighting within {float(around_minutes):g} "
                                       "minutes of that time."}
             else:
                 obs = tm.get_last_seen(bid, self.db_path, self._now(), self.belongings_dir,
-                                       history=0 if at_time else 3, at=at_time, tz=self.tz)
+                                       history=0 if at_time else 3, at=at_time, tz=self.tz,
+                                       owner_id=self.owner_id)
             if obs.get("sighting_id"):
                 self.referenced.add(obs["sighting_id"])
             if at_time:
@@ -347,10 +370,11 @@ class MemoryTools:
     def tool_look_at_photo(self, sighting_id,
                            question="Describe exactly where the boxed item is."):
         from recallai.ai.interpreter import frame_with_box
+        own, own_params = self._own()
         with dbmod.connect(self.db_path) as db:
-            row = db.execute("SELECT * FROM sightings WHERE id=?",
-                             (int(sighting_id),)).fetchone()
-        if row is None:
+            row = db.execute(f"SELECT * FROM sightings WHERE id=? AND {own}",
+                             (int(sighting_id), *own_params)).fetchone()
+        if row is None:  # also someone else's sighting: indistinguishable
             return f"No sighting #{sighting_id}"
         self.referenced.add(row["id"])
         if self.vision is None:
@@ -367,7 +391,7 @@ class MemoryTools:
         return f"Sighting #{row['id']} ({when}): " + self.vision(content)
 
     def tool_list_people(self):
-        rows = list_people(self.db_path)
+        rows = list_people(self.db_path, owner_id=self.owner_id)
         if not rows:
             return "No people saved yet."
         brief = [{
@@ -428,13 +452,16 @@ class RecallAgent:
     def enabled(self):
         return self.client is not None
 
-    def ask(self, question, history=None, user_tz=None):
+    def ask(self, question, history=None, user_tz=None, owner_id=None, gps_provider=None):
         """history: [{"role": "user"|"assistant", "content": "text"}, ...]
-        user_tz: the user's IANA zone name (from the browser); invalid -> UTC."""
+        user_tz: the user's IANA zone name (from the browser); invalid -> UTC.
+        owner_id: the signed-in user (the server always passes it); every
+        tool call and cited sighting is limited to their data.
+        gps_provider: that user's live phone GPS."""
         if not self.enabled:
             return {"answer": "Grok isn't configured. Set XAI_API_KEY "
                               "and restart the server.", "sightings": [], "steps": []}
-        tools = self.tools.for_request(user_tz)
+        tools = self.tools.for_request(user_tz, owner_id, gps_provider)
         if tools.vision is None:
             tools.vision = self._look
         messages = [{"role": "system", "content": SYSTEM}]
@@ -467,7 +494,7 @@ class RecallAgent:
             answer = output_text(response) or "Sorry, I couldn't come up with an answer."
 
         cited = [int(i) for i in re.findall(r"\[#(\d+)\]", answer)]
-        out = {"answer": answer, "sightings": self._rows(cited), "steps": steps}
+        out = {"answer": answer, "sightings": self._rows(cited, tools), "steps": steps}
         if tools.lookups:
             out["lookups"] = tools.lookups  # additive: requested vs observed time
         return out
@@ -478,13 +505,17 @@ class RecallAgent:
             model=VISION_MODEL, input=[{"role": "user", "content": content}])
         return output_text(response) or "(no description)"
 
-    def _rows(self, ids):
+    def _rows(self, ids, tools=None):
+        """Cited sightings, only the requesting user's (a model citing a
+        foreign id gets nothing back)."""
+        tools = tools or self.tools
         if not ids:
             return []
-        with dbmod.connect(self.tools.db_path) as db:
+        own, own_params = tools._own()
+        with dbmod.connect(tools.db_path) as db:
             rows = db.execute(
-                f"SELECT * FROM sightings WHERE id IN ({','.join('?' * len(ids))})",
-                ids).fetchall()
+                f"SELECT * FROM sightings WHERE id IN ({','.join('?' * len(ids))}) AND {own}",
+                (*ids, *own_params)).fetchall()
         by_id = {r["id"]: dict(r) for r in rows}
         return [by_id[i] for i in dict.fromkeys(ids) if i in by_id]
 

@@ -1,10 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Identity } from 'spacetimedb';
-import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, type ErrorContext } from './module_bindings';
 import { SPACETIMEDB_DB_NAME, SPACETIMEDB_HOST } from './config';
-import App from './App';
+import Root from './Root';
 import './styles.css';
 
 const TOKEN_KEY = `${SPACETIMEDB_HOST}/${SPACETIMEDB_DB_NAME}/auth_token`;
@@ -49,8 +48,7 @@ const connectionBuilder = DbConnection.builder()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      <App />
-    </SpacetimeDBProvider>
+    {/* Sign-in screen until signed in; then the live dashboard (Root.tsx). */}
+    <Root connectionBuilder={connectionBuilder} />
   </StrictMode>
 );

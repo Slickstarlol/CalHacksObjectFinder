@@ -40,6 +40,8 @@ export type DashboardProps = {
     onClear: () => void;
   };
   initialSelectedId?: string | null;
+  /** The signed-in account shown in the top bar, with its sign-out action. */
+  account?: { name: string; username: string; onSignOut: () => void };
 };
 
 /** Pure presentational dashboard: everything comes in through props. */
@@ -81,6 +83,7 @@ export function Dashboard(props: DashboardProps) {
         belongings={belongings.length}
         sightings={visibleCount}
         alerts={shownAlerts.length}
+        account={props.account}
       />
       <main className="layout">
         <div className="col-main">

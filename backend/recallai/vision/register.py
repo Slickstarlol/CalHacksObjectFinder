@@ -6,6 +6,12 @@ Examples
   python -m recallai.vision.register --id 3617519a583a     # add photos to an existing item
   python -m recallai.vision.register --id 3617519a583a --from-images bag1.jpg bag2.jpg
   python -m recallai.vision.register --list
+  python -m recallai.vision.register --user kent --name "My Bag" --category backpack
+
+Owner (--user USERNAME): the account the new belonging belongs to. Without
+--user: if exactly one account exists it is used; if none exist yet the
+item is ownerless and the first account created claims it; if several
+exist, --user is required.
 
 Webcam controls
   S  = save a photo, auto-cropped to the detected object (green box)
@@ -74,11 +80,13 @@ def save_reference(folder, crop):
     return path
 
 
-def create_item(name, category):
+def create_item(name, category, owner_id=None):
     item_id = uuid.uuid4().hex[:12]
     folder = BELONGINGS_DIR / item_id
     folder.mkdir(parents=True)
     info = {"id": item_id, "name": name, "category": category}
+    if owner_id is not None:
+        info["owner_id"] = owner_id
     (folder / "info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     return folder, info
 
@@ -163,14 +171,34 @@ def capture_from_webcam(model, folder, info, camera_index):
     return count
 
 
+def resolve_owner(username=None):
+    """users.id for --user (see the module docstring), or None."""
+    from recallai.memory import db as dbmod
+    from recallai.memory import users
+    dbmod.init_db()
+    return users.resolve_cli_owner(username)
+
+
+def owner_names():
+    try:
+        from recallai.memory import db as dbmod
+        from recallai.memory import users
+        dbmod.init_db()
+        return {u["id"]: u["username"] for u in users.list_users()}
+    except Exception:
+        return {}
+
+
 def list_items():
     from recallai.vision.recognition import load_belongings
     items = load_belongings(BELONGINGS_DIR)
     if not items:
         print("Nothing registered yet.")
+    names = owner_names()
     for b in items:
         flag = "" if b.reference_paths else "   <-- needs photos"
-        print(f"{b.id}  {b.name:<20} {b.category:<12} "
+        owner = names.get(b.owner_id, "(no owner)") if b.owner_id is not None else "(no owner)"
+        print(f"{b.id}  {b.name:<20} {b.category:<12} {owner:<16} "
               f"{len(b.reference_paths)} photos{flag}")
 
 
@@ -182,22 +210,32 @@ def main():
     ap.add_argument("--from-images", nargs="+", metavar="FILE")
     ap.add_argument("--camera", type=int, default=CAMERA_INDEX)
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--user", metavar="USERNAME",
+                    help="account that owns the belonging (see above)")
     args = ap.parse_args()
 
     if args.list:
         return list_items()
 
-    model = load_model()
     new_item = args.id is None
+    # Adding photos to an existing item keeps its owner unless --user is given.
+    owner_id = resolve_owner(args.user) if (new_item or args.user) else None
+    model = load_model()
     if new_item:
         name = args.name or input("Belonging name (e.g. My Black Backpack): ").strip()
         category = args.category or input("YOLO category (e.g. backpack): ")
         if not name:
             raise SystemExit("Name is required")
         category = validate_category(category, model.names)
-        folder, info = create_item(name, category)
+        folder, info = create_item(name, category, owner_id)
     else:
         folder, info = load_item(args.id)
+        current = info.get("owner_id")
+        if current is not None and owner_id is not None and current != owner_id:
+            raise SystemExit(f"{info['name']} belongs to another account.")
+        if current is None and owner_id is not None:
+            from recallai.vision.recognition import set_owner
+            set_owner(folder, owner_id)
 
     if args.from_images:
         count = import_images(model, folder, info["category"], args.from_images)

@@ -2,15 +2,29 @@
 
 webcam.py draws boxes, then hands the frame here. A background thread posts
 the latest JPEG to POST /api/live so the React dashboard can show it.
+
+POST /api/live is device-only. On the same machine nothing is needed (the
+server trusts loopback requests without a browser Origin). For a camera on
+another machine, set the same RECALLAI_DEVICE_KEY for the server and the
+camera; it is sent as the X-RecallAI-Device-Key header.
 """
 
 import base64
+import os
 import threading
 
 import cv2
 import requests
 
-LIVE_URL = "http://127.0.0.1:8000/api/live"
+SERVER_URL = os.environ.get("RECALLAI_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
+LIVE_URL = SERVER_URL + "/api/live"
+DEVICE_KEY_HEADER = "X-RecallAI-Device-Key"
+
+
+def device_headers():
+    """Headers proving this process is the camera (empty on the same machine)."""
+    key = os.environ.get("RECALLAI_DEVICE_KEY", "").strip()
+    return {DEVICE_KEY_HEADER: key} if key else {}
 PUBLISH_EVERY = 0.12
 PREVIEW_EDGE = 960
 
@@ -89,7 +103,11 @@ class LivePublisher:
                 **payload,
             }
             try:
-                response = requests.post(self.url, json=body, timeout=0.5)
+                kwargs = {"json": body, "timeout": 0.5}
+                headers = device_headers()
+                if headers:
+                    kwargs["headers"] = headers
+                response = requests.post(self.url, **kwargs)
             except requests.RequestException:
                 continue
             try:

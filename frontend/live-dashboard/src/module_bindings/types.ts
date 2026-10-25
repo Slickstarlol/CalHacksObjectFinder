@@ -20,6 +20,7 @@ export const Alert = __t.object("Alert", {
   message: __t.string(),
   createdAtMicros: __t.i64(),
   dismissed: __t.bool(),
+  owner: __t.string(),
 });
 export type Alert = __Infer<typeof Alert>;
 
@@ -29,6 +30,7 @@ export const Belonging = __t.object("Belonging", {
   category: __t.string(),
   photos: __t.u32(),
   tracking: __t.bool(),
+  owner: __t.string(),
 });
 export type Belonging = __Infer<typeof Belonging>;
 
@@ -46,6 +48,7 @@ export const Person = __t.object("Person", {
   knownSince: __t.string(),
   createdAtMicros: __t.i64(),
   updatedAtMicros: __t.i64(),
+  owner: __t.string(),
 });
 export type Person = __Infer<typeof Person>;
 
@@ -66,6 +69,7 @@ export const Sighting = __t.object("Sighting", {
   hasGps: __t.bool(),
   latitude: __t.f64(),
   longitude: __t.f64(),
+  owner: __t.string(),
 });
 export type Sighting = __Infer<typeof Sighting>;
 

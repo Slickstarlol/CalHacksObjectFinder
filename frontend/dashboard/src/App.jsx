@@ -1,9 +1,79 @@
 import { useEffect, useState } from 'react'
-import { getJSON, sendJSON } from './api'
+import { fetchMe, getJSON, sendJSON, signOut } from './api'
 import AskBoard from './AskBoard'
+import AuthScreen from './AuthScreen'
 import LiveBoard from './LiveBoard'
 import PeopleBoard from './PeopleBoard'
+import { getSession, setSession, UNAUTHORIZED_EVENT } from './session'
 import './App.css'
+
+const ENDED = 'Your session has ended. Please sign in again.'
+
+// Auth gate: until someone is signed in, only the sign-in / create-account
+// screen renders and no user data is requested. A 401 from any request
+// (expired or revoked session) brings the screen back.
+export default function App() {
+  const [session, setCurrent] = useState(getSession)
+  const [checking, setChecking] = useState(() => getSession() !== null)
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    const ended = () => {
+      setCurrent(null)
+      setNotice(ENDED)
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, ended)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, ended)
+  }, [])
+
+  // A saved session: confirm it's still valid (and pick up name changes).
+  useEffect(() => {
+    const saved = getSession()
+    if (!saved) return undefined
+    let stop = false
+    fetchMe()
+      .then((user) => {
+        if (stop) return
+        const next = { ...saved, user }
+        setSession(next)
+        setCurrent(next)
+      })
+      .catch(() => {
+        // 401 already signed us out; otherwise the server is down: keep the session.
+      })
+      .finally(() => {
+        if (!stop) setChecking(false)
+      })
+    return () => {
+      stop = true
+    }
+  }, [])
+
+  if (!session || checking) {
+    return (
+      <AuthScreen
+        checking={checking && Boolean(session)}
+        notice={notice}
+        onSignedIn={(next) => {
+          setNotice('')
+          setCurrent(next)
+        }}
+      />
+    )
+  }
+
+  return (
+    <Dashboard
+      key={session.user.id}
+      user={session.user}
+      onSignOut={async () => {
+        await signOut()
+        setNotice('')
+        setCurrent(null)
+      }}
+    />
+  )
+}
 
 function Status({ live, serverDown }) {
   if (serverDown) return <p className="status-pill off">Server off</p>
@@ -12,7 +82,7 @@ function Status({ live, serverDown }) {
   return <p className="status-pill">Connecting</p>
 }
 
-export default function App() {
+function Dashboard({ user, onSignOut }) {
   const [live, setLive] = useState(null)
   const [belongings, setBelongings] = useState(null)
   const [recent, setRecent] = useState(null)
@@ -88,6 +158,15 @@ export default function App() {
           <a href="#ask">Ask</a>
         </nav>
         <Status live={live} serverDown={serverDown} />
+        <div className="account">
+          <span className="who" title={`Signed in as ${user.username}`}>
+            <span className="visually-hidden">Signed in as </span>
+            {user.display_name || user.username}
+          </span>
+          <button type="button" className="btn ghost" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       {serverDown && (

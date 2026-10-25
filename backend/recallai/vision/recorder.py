@@ -10,6 +10,12 @@ Two kinds of memory are written per belonging:
                   the item has been out of view for GONE_AFTER seconds.
                   This is usually the moment you put it down and walked
                   away, which is the most useful memory of all.
+
+Ownership: the camera sees every account's belongings. Each sighting is
+written with the owner_id of the belonging it matched (re-read from
+info.json every few seconds, so an item claimed after the camera started is
+tagged correctly), and with THAT owner's phone GPS when `gps` is a
+per-owner map ({"by_owner": {"<user id>": fix}}).
 """
 
 from __future__ import annotations
@@ -23,7 +29,24 @@ import cv2
 
 from recallai import paths
 from recallai.memory import db as dbmod
-from recallai.vision.recognition import crop_box
+from recallai.vision.recognition import crop_box, read_owner
+
+OWNER_TTL = 5.0   # seconds to cache a belonging's owner between info.json reads
+
+
+def gps_for_owner(gps, owner_id):
+    """Pick the fix to attach to an owner's sighting.
+
+    gps is None, a single fix (has "latitude": shared, single-user setups),
+    or {"by_owner": {"<owner id>": fix}} from the server's /api/device/gps."""
+    if not gps:
+        return None
+    if "latitude" in gps:
+        return gps
+    by_owner = gps.get("by_owner") or {}
+    if owner_id is None:
+        return None
+    return by_owner.get(str(owner_id))
 
 SNAPSHOT_DIR = paths.SNAPSHOT_DIR   # data/snapshots; SQLite stores "snapshots/<file>"
 
@@ -45,6 +68,7 @@ class _Seen:
     gps: dict | None
     timestamp: str
     mono: float
+    owner_id: int | None = None
 
 
 class SightingRecorder:
@@ -63,9 +87,23 @@ class SightingRecorder:
         self.last_seen = {}      # belonging_id -> _Seen
         self.left_logged = set() # belonging_ids whose departure is recorded
         self.last_row = {}       # belonging_id -> (row id, monotonic time) of last 'seen'
+        self._owners = {}        # belonging_id -> (owner_id, monotonic time read)
 
     def close(self):
         self.db.close()
+
+    def owner_of(self, bid, match=None, now=None):
+        """Current owner of a belonging (info.json, cached OWNER_TTL s)."""
+        now = time.monotonic() if now is None else now
+        cached = self._owners.get(bid)
+        if cached and now - cached[1] < OWNER_TTL:
+            return cached[0]
+        base = getattr(self.matcher, "base_dir", None)
+        owner = read_owner(Path(base) / bid) if base is not None else None
+        if owner is None and match is not None:
+            owner = getattr(match, "owner_id", None)
+        self._owners[bid] = (owner, now)
+        return owner
 
     # ------------------------------------------------------------------
     def process(self, frame, detections, gps=None, now=None):
@@ -93,8 +131,10 @@ class SightingRecorder:
                 d.category for d in detections
                 if d.category != det.category and _iou(d.xyxy, det.xyxy) < 0.5
             }))
+            owner = self.owner_of(bid, m, now)
             self.last_seen[bid] = _Seen(frame.copy(), crop.copy(), det,
-                                        m.score, nearby, gps, timestamp, now)
+                                        m.score, nearby, gps_for_owner(gps, owner),
+                                        timestamp, now, owner)
             self.left_logged.discard(bid)
 
             if now - self.last_saved.get(bid, -1e12) >= self.save_interval:
@@ -150,6 +190,7 @@ class SightingRecorder:
             bbox=f"{x1},{y1},{x2},{y2}",
             crop_path=crop_rel,
             nearby=seen.nearby,
+            owner_id=seen.owner_id,
         )
         print(f"[{event.upper()}] {name} (match {seen.score:.2f})"
               + (f" near: {seen.nearby}" if seen.nearby else ""))

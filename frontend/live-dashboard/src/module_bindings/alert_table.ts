@@ -20,4 +20,5 @@ export default __t.row({
   message: __t.string(),
   createdAtMicros: __t.i64().name("created_at_micros"),
   dismissed: __t.bool(),
+  owner: __t.string(),
 });

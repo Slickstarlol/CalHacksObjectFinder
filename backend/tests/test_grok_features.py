@@ -15,7 +15,7 @@ import pytest
 from recallai.ai import agent as agentmod
 from recallai.memory import db as dbmod
 from recallai.ai import watcher
-from conftest import RED, make_object_image, register
+from conftest import RED, make_object_image, register, sign_in
 from recallai.ai.interpreter import Interpreter
 from recallai.ai.llm import VISION_MODEL
 from recallai.vision.recognition import BelongingMatcher, HistogramEmbedder
@@ -144,6 +144,7 @@ def test_rejected_sighting_is_hidden_everywhere(world, monkeypatch):
     assert row(world.ids["left"])["verified"] == 0
 
     api = TestClient(server.app)
+    sign_in(api)
     ids = [s["id"] for s in api.get("/api/sightings", params={"q": "my mouse"}).json()]
     assert world.ids["left"] not in ids and world.ids["seen"] in ids
 
@@ -374,6 +375,7 @@ def test_ask_and_alert_endpoints(world, monkeypatch):
         f"On the gray table [#{world.ids['left']}]."))))
     monkeypatch.setattr(server.agent.tools, "belongings_dir", world.dir)
     api = TestClient(server.app)
+    sign_in(api)   # claims the world's ownerless belongings and sightings
 
     r = api.post("/api/ask", json={"question": "where is my mouse"})
     assert r.status_code == 200

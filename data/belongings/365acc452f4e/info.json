@@ -1,5 +1,6 @@
 {
   "id": "365acc452f4e",
   "name": "My Mouse",
-  "category": "mouse"
+  "category": "mouse",
+  "owner_id": 1
 }

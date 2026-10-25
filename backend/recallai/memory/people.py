@@ -8,13 +8,18 @@ from that date so it stays current.
     POST   /api/people
     PUT    /api/people/{id}
     DELETE /api/people/{id}
+
+People are private per account: every route needs a signed-in user and
+only sees and changes rows with that user's owner_id (others' ids -> 404).
 """
 
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from recallai import owners
+from recallai.api.auth import current_user
 from recallai.memory import db as dbmod
 
 router = APIRouter()
@@ -89,11 +94,12 @@ def _row(row, today=None):
     return data
 
 
-def list_people(db_path=None, today=None):
+def list_people(db_path=None, today=None, owner_id=owners.ANY):
     dbmod.init_db(db_path)
+    own, params = owners.clause(owner_id)
     with dbmod.connect(db_path) as db:
         rows = db.execute(
-            "SELECT * FROM people ORDER BY name COLLATE NOCASE, id"
+            f"SELECT * FROM people WHERE {own} ORDER BY name COLLATE NOCASE, id", params
         ).fetchall()
     return [_row(r, today) for r in rows]
 
@@ -103,21 +109,21 @@ def _now():
 
 
 @router.get("/api/people")
-def get_people():
-    return list_people()
+def get_people(user=Depends(current_user)):
+    return list_people(owner_id=user["id"])
 
 
 @router.post("/api/people", status_code=201)
-def create_person(body: PersonIn):
+def create_person(body: PersonIn, user=Depends(current_user)):
     fields = _clean(body)
     now = _now()
     dbmod.init_db()
     with dbmod.connect() as db:
         cur = db.execute(
             "INSERT INTO people (name, description, relationship, known_since, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            "created_at, updated_at, owner_id) VALUES (?,?,?,?,?,?,?)",
             (fields["name"], fields["description"], fields["relationship"],
-             fields["known_since"], now, now),
+             fields["known_since"], now, now, user["id"]),
         )
         db.commit()
         row = db.execute("SELECT * FROM people WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -125,16 +131,16 @@ def create_person(body: PersonIn):
 
 
 @router.put("/api/people/{person_id}")
-def update_person(person_id: int, body: PersonIn):
+def update_person(person_id: int, body: PersonIn, user=Depends(current_user)):
     fields = _clean(body)
     now = _now()
     dbmod.init_db()
     with dbmod.connect() as db:
         cur = db.execute(
             "UPDATE people SET name=?, description=?, relationship=?, "
-            "known_since=?, updated_at=? WHERE id=?",
+            "known_since=?, updated_at=? WHERE id=? AND owner_id=?",
             (fields["name"], fields["description"], fields["relationship"],
-             fields["known_since"], now, person_id),
+             fields["known_since"], now, person_id, user["id"]),
         )
         db.commit()
         if cur.rowcount == 0:
@@ -144,10 +150,11 @@ def update_person(person_id: int, body: PersonIn):
 
 
 @router.delete("/api/people/{person_id}")
-def delete_person(person_id: int):
+def delete_person(person_id: int, user=Depends(current_user)):
     dbmod.init_db()
     with dbmod.connect() as db:
-        cur = db.execute("DELETE FROM people WHERE id=?", (person_id,))
+        cur = db.execute("DELETE FROM people WHERE id=? AND owner_id=?",
+                         (person_id, user["id"]))
         db.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "No such person")

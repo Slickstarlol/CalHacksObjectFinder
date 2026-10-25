@@ -18,4 +18,5 @@ export default {
   knownSince: __t.string(),
   createdAtMicros: __t.i64(),
   updatedAtMicros: __t.i64(),
+  owner: __t.string(),
 };

@@ -16,4 +16,5 @@ export default {
   category: __t.string(),
   photos: __t.u32(),
   tracking: __t.bool(),
+  owner: __t.string(),
 };

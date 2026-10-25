@@ -7,7 +7,7 @@
             → recorder: seen / left_view                          │
                  │                                                ▼
                  ▼ writes                                 recallai.api.server (FastAPI :8000)
-   data/memory.db (SQLite, primary store)  ◀──── reads ────  /search, / (GPS), /api/*, /snapshots/*, /app/
+   data/memory.db (SQLite, primary store)  ◀──── reads ────  /api/auth/*, /search, / (GPS), /api/*, /snapshots/*, /app/
    data/snapshots/ (frames + crops)                               │        ▲
                  │                                                │        │ /api, /snapshots (Vite proxy)
                  │  recallai.sync.spacetime_bridge                │   frontend/dashboard (:5173)
@@ -43,3 +43,12 @@ relative to `data/` (`snapshots/<file>`), which is also the URL served at
 
 The data contract between SQLite, the bridge, the module and the live dashboard
 is in [SPACETIME_CONTRACT.md](SPACETIME_CONTRACT.md).
+
+## Accounts
+
+Users and sign-in sessions live in `data/memory.db` (`recallai/memory/users.py`,
+routes in `recallai/api/auth.py`). Every belonging (`info.json` `owner_id`),
+sighting, alert and person carries an owner; every user-data endpoint needs
+`Authorization: Bearer <token>` and filters by the caller's id
+(`recallai/owners.py` holds the shared filter helpers). The camera is a
+trusted local device, not a user. Full description: [AUTH.md](AUTH.md).

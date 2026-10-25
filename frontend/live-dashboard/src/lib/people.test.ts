@@ -29,7 +29,7 @@ describe('sortPeople', () => {
   it('sorts by name case-insensitively, then id', () => {
     const p = (id: bigint, name: string): Person => ({
       id, name, description: '', relationship: '', knownSince: '',
-      createdAtMicros: 0n, updatedAtMicros: 0n,
+      createdAtMicros: 0n, updatedAtMicros: 0n, owner: '1',
     });
     const out = sortPeople([p(3n, 'kent'), p(2n, 'Chawin'), p(1n, 'Kent')]);
     expect(out.map(x => x.id)).toEqual([2n, 1n, 3n]);

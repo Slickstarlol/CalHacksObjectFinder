@@ -5,6 +5,9 @@ import type { AskEntry } from '../components/types';
 
 const MIN = 60_000;
 
+/** Owner value (RecallAI user id as text) of every demo row: the signed-in demo user. */
+export const DEMO_OWNER = '1';
+
 export function micros(date: Date | number): bigint {
   const ms = typeof date === 'number' ? date : date.getTime();
   return BigInt(Math.round(ms)) * 1000n;
@@ -26,32 +29,33 @@ export function makeSighting(p: Partial<Sighting> & Pick<Sighting, 'id' | 'belon
     hasGps: false,
     latitude: 0,
     longitude: 0,
+    owner: DEMO_OWNER,
     ...p,
   };
 }
 
 export const belongings: Belonging[] = [
-  { id: 'a1f3c9e2b7d4', name: 'My Laptop', category: 'laptop', photos: 6, tracking: true },
-  { id: 'b8e2d17c4a90', name: 'Water Bottle', category: 'bottle', photos: 4, tracking: true },
-  { id: '3617519a583a', name: 'My Bag', category: 'backpack', photos: 5, tracking: true },
-  { id: 'c42f0e9d1b6a', name: 'Phone', category: 'cell phone', photos: 3, tracking: true },
-  { id: '365acc452f4e', name: 'My Mouse', category: 'mouse', photos: 2, tracking: true },
+  { id: 'a1f3c9e2b7d4', name: 'My Laptop', category: 'laptop', photos: 6, tracking: true, owner: DEMO_OWNER },
+  { id: 'b8e2d17c4a90', name: 'Water Bottle', category: 'bottle', photos: 4, tracking: true, owner: DEMO_OWNER },
+  { id: '3617519a583a', name: 'My Bag', category: 'backpack', photos: 5, tracking: true, owner: DEMO_OWNER },
+  { id: 'c42f0e9d1b6a', name: 'Phone', category: 'cell phone', photos: 3, tracking: true, owner: DEMO_OWNER },
+  { id: '365acc452f4e', name: 'My Mouse', category: 'mouse', photos: 2, tracking: true, owner: DEMO_OWNER },
 ];
 
 /** A belonging whose enrollment is still collecting angles (info.json tracking: false). */
 export const enrollingBelonging: Belonging = {
-  id: '7fcd5eb42abe', name: 'Cup 1', category: 'cup', photos: 2, tracking: false,
+  id: '7fcd5eb42abe', name: 'Cup 1', category: 'cup', photos: 2, tracking: false, owner: DEMO_OWNER,
 };
 
 export function makePeople(now: number): Person[] {
   return [
     {
       id: 2n, name: 'Mom', description: '', relationship: 'family', knownSince: '',
-      createdAtMicros: micros(now - 60 * MIN), updatedAtMicros: micros(now - 60 * MIN),
+      createdAtMicros: micros(now - 60 * MIN), updatedAtMicros: micros(now - 60 * MIN), owner: DEMO_OWNER,
     },
     {
       id: 1n, name: 'Chawin', description: 'Tall, glasses, CalHacks hoodie.', relationship: 'teammate',
-      knownSince: '2024-09-01', createdAtMicros: micros(now - 120 * MIN), updatedAtMicros: micros(now - 5 * MIN),
+      knownSince: '2024-09-01', createdAtMicros: micros(now - 120 * MIN), updatedAtMicros: micros(now - 5 * MIN), owner: DEMO_OWNER,
     },
   ];
 }
@@ -114,18 +118,18 @@ export function makeAlerts(now: number): Alert[] {
       id: 77n, belongingId: 'b8e2d17c4a90', belongingName: 'Water Bottle', sightingId: 1044n,
       reason: 'left_behind', urgency: 'high',
       message: 'Did you forget your water bottle? It left view at the hacking table 23 minutes ago.',
-      createdAtMicros: micros(now - 2 * MIN), dismissed: false,
+      createdAtMicros: micros(now - 2 * MIN), dismissed: false, owner: DEMO_OWNER,
     },
     {
       id: 74n, belongingId: '3617519a583a', belongingName: 'My Bag', sightingId: 0n,
       reason: 'not_seen', urgency: 'low',
       message: 'Your bag hasn’t been seen in over 2 hours.',
-      createdAtMicros: micros(now - 9 * MIN), dismissed: false,
+      createdAtMicros: micros(now - 9 * MIN), dismissed: false, owner: DEMO_OWNER,
     },
     {
       id: 60n, belongingId: 'a1f3c9e2b7d4', belongingName: 'My Laptop', sightingId: 1012n,
       reason: 'left_behind', urgency: 'high', message: 'Old dismissed alert (must not render).',
-      createdAtMicros: micros(now - 90 * MIN), dismissed: true,
+      createdAtMicros: micros(now - 90 * MIN), dismissed: true, owner: DEMO_OWNER,
     },
   ];
 }

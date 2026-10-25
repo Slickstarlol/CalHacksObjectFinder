@@ -48,6 +48,15 @@ NEW_COLUMNS = {
     "verify_reason": "TEXT",
     "description": "TEXT",        # "On the gray folding table, left of the green bag"
     "place": "TEXT",              # short label: "hackathon table", "kitchen counter"
+    # users.id of the account that owns the belonging (NULL = legacy/ownerless,
+    # claimed by the first account ever registered).
+    "owner_id": "INTEGER",
+}
+
+# Owner column for the other per-user tables (same meaning as above).
+OWNER_COLUMNS = {
+    "alerts": {"owner_id": "INTEGER"},
+    "people": {"owner_id": "INTEGER"},
 }
 
 ALERTS_SCHEMA = """
@@ -80,6 +89,42 @@ CREATE TABLE IF NOT EXISTS people (
 """
 
 
+# Accounts. Usernames are stored lowercase; COLLATE NOCASE keeps the
+# uniqueness case-insensitive even for rows written by hand.
+USERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,        -- scrypt$n$r$p$salt$hash (see users.py)
+    created_at TEXT NOT NULL
+)
+"""
+
+# Sign-in sessions. Only a SHA-256 of the bearer token is stored, so a copy
+# of memory.db does not hand out working tokens.
+SESSIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT
+)
+"""
+
+INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_sightings_owner ON sightings(owner_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sightings_belonging ON sightings(belonging_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sightings_image ON sightings(image_path)",
+    "CREATE INDEX IF NOT EXISTS idx_sightings_crop ON sightings(crop_path)",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_owner ON alerts(owner_id)",
+    "CREATE INDEX IF NOT EXISTS idx_people_owner ON people(owner_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)",
+)
+
+
 def connect(path=None):
     path = path or DB_PATH
     if str(path) != ":memory:":
@@ -89,16 +134,27 @@ def connect(path=None):
     return db
 
 
-def _columns(db):
-    return {row[1]: row for row in db.execute("PRAGMA table_info(sightings)")}
+def _columns(db, table="sightings"):
+    return {row[1]: row for row in db.execute(f"PRAGMA table_info({table})")}
 
 
 def init_db(path=None):
-    """Create or upgrade the sightings table. Safe to call repeatedly."""
+    """Create or upgrade every table. Safe to call repeatedly.
+
+    Upgrades only ever ADD columns/tables/indexes (ALTER TABLE ... ADD
+    COLUMN), so no row is dropped. Rows that predate accounts keep
+    owner_id NULL until the first account claims them."""
     with connect(path) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute(ALERTS_SCHEMA)
         db.execute(PEOPLE_SCHEMA)
+        db.execute(USERS_SCHEMA)
+        db.execute(SESSIONS_SCHEMA)
+        for table, extra in OWNER_COLUMNS.items():
+            have = _columns(db, table)
+            for name, decl in extra.items():
+                if name not in have:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         cols = _columns(db)
 
         if not cols:
@@ -121,6 +177,9 @@ def init_db(path=None):
         for name, decl in NEW_COLUMNS.items():
             if name not in cols:
                 db.execute(f"ALTER TABLE sightings ADD COLUMN {name} {decl}")
+
+        for stmt in INDEXES:
+            db.execute(stmt)
 
 
 def insert_sighting(db, **fields):

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from recallai.memory import db as dbmod
 from recallai.sync import spacetime_bridge as sb
-from conftest import RED, make_object_image, register
+from conftest import RED, make_object_image, register, sign_in
 
 URL = "http://stdb.test:3000"
 
@@ -206,8 +206,8 @@ def test_plain_token_file_accepted(world):
 def test_belongings_pushed_in_contract_order(world):
     world.bridge.sync_once()
     calls = world.fake.reducer_calls("upsert_belonging")
-    assert calls == [("upsert_belonging", ["bag1", "My Bag", "backpack", 3, True]),
-                     ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 0, True])]
+    assert calls == [("upsert_belonging", ["bag1", "My Bag", "backpack", 3, True, ""]),
+                     ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 0, True, ""])]
     assert type(calls[0][1][4]) is bool
     # sql bodies are raw text with the right path
     sql = [(p, b) for p, _, b in world.fake.calls if p.endswith("/sql")]
@@ -215,11 +215,11 @@ def test_belongings_pushed_in_contract_order(world):
     assert b"SELECT id FROM alert WHERE dismissed = true" in [b for _, b in sql]
 
 
-def test_upsert_sighting_all_16_args_full_row(world):
-    sid = add_sighting()
+def test_upsert_sighting_all_17_args_full_row(world):
+    sid = add_sighting(owner_id=7)
     world.bridge.sync_once()
     [(_, args)] = world.fake.reducer_calls("upsert_sighting")
-    assert len(args) == 16
+    assert len(args) == 17
     expected = [
         (sid, int),                               # id
         ("bag1", str),                            # belongingId
@@ -237,6 +237,7 @@ def test_upsert_sighting_all_16_args_full_row(world):
         (True, bool),                             # hasGps
         (37.87, float),                           # latitude
         (-122.26, float),                         # longitude
+        ("7", str),                               # owner (users.id as text)
     ]
     for i, (value, typ) in enumerate(expected):
         assert args[i] == value, i
@@ -252,7 +253,7 @@ def test_upsert_sighting_nulls(world):
     world.bridge.sync_once()
     [(_, args)] = world.fake.reducer_calls("upsert_sighting")
     assert args == [sid, "mouse1", "", "mouse", "left_view", 1792854000_000000,
-                    "/snapshots/m.jpg", "", "", "", "", 0.0, -1, False, 0.0, 0.0]
+                    "/snapshots/m.jpg", "", "", "", "", 0.0, -1, False, 0.0, 0.0, ""]
     assert type(args[11]) is float and type(args[12]) is int
     assert args[13] is False
 
@@ -281,9 +282,9 @@ def test_upsert_alert_args(world):
     calls = world.fake.reducer_calls("upsert_alert")
     assert calls == [
         ("upsert_alert", [a1, "bag1", "My Bag", sid, "out_of_sight", "high",
-                          "Did you forget My Bag?", 1792854000_000000, False]),
+                          "Did you forget My Bag?", 1792854000_000000, False, ""]),
         ("upsert_alert", [a2, "bag1", "My Bag", 0, "out_of_sight", "high",
-                          "Did you forget My Bag?", 1792854000_000000, True]),
+                          "Did you forget My Bag?", 1792854000_000000, True, ""]),
     ]
     assert type(calls[0][1][8]) is bool
 
@@ -340,7 +341,7 @@ def test_photo_count_change_repushes_belonging(world):
     register(world.dir, "My Mouse", "mouse", [make_object_image(RED)], item_id="mouse1")
     world.bridge.sync_once()
     assert world.fake.reducer_calls("upsert_belonging") == [
-        ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 1, True])]
+        ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 1, True, ""])]
 
 
 def test_rejected_row_does_not_block_others(world):
@@ -469,6 +470,7 @@ def server_mod(tmp_path, monkeypatch):
 def test_lifespan_skips_bridge_when_disabled(server_mod, monkeypatch, capsys):
     monkeypatch.setenv("SPACETIME_SYNC", "0")
     with TestClient(server_mod.app) as c:
+        sign_in(c)
         assert c.get("/api/alerts").status_code == 200
     assert RecordingBridge.started == 0
     assert "Dashboard sync: off" in capsys.readouterr().out
@@ -483,9 +485,10 @@ def test_lifespan_starts_bridge(server_mod, monkeypatch):
 
 def test_server_routes_unaffected_and_cors(server_mod, monkeypatch):
     monkeypatch.setattr(server_mod.agent, "ask",
-                        lambda q, h, tz: {"answer": "On the table [#1]",
-                                          "sightings": [], "steps": []})
+                        lambda q, h, tz, **kw: {"answer": "On the table [#1]",
+                                                "sightings": [], "steps": []})
     c = TestClient(server_mod.app)
+    sign_in(c)
     r = c.post("/api/ask", json={"question": "where is my bag?"},
                headers={"Origin": "http://localhost:5173"})
     assert r.status_code == 200 and r.json()["answer"].startswith("On the table")
@@ -602,7 +605,7 @@ def test_enrolling_belonging_synced_with_tracking_false_then_flips(world):
     assert n == 1 and info["tracking"] is False
     world.bridge.sync_once()
     calls = {a[0]: a for _, a in world.fake.reducer_calls("upsert_belonging")}
-    assert calls[info["id"]] == [info["id"], info["name"], "cup", 1, False]
+    assert calls[info["id"]] == [info["id"], info["name"], "cup", 1, False, ""]
     assert calls["bag1"][4] is True                    # no key in info.json -> tracking
 
     for _ in range(enroll.ANGLES - 1):
@@ -611,7 +614,7 @@ def test_enrolling_belonging_synced_with_tracking_false_then_flips(world):
     world.fake.clear()
     world.bridge.sync_once()
     assert world.fake.reducer_calls("upsert_belonging") == [
-        ("upsert_belonging", [info["id"], info["name"], "cup", enroll.ANGLES, True])]
+        ("upsert_belonging", [info["id"], info["name"], "cup", enroll.ANGLES, True, ""])]
 
 
 # ------------------------------------------------------------ people
@@ -634,9 +637,9 @@ def test_upsert_person_args_in_contract_order(world):
     assert counts["people"] == 2
     assert world.fake.reducer_calls("upsert_person") == [
         ("upsert_person", [p1, "Chawin", "Glasses", "teammate", "2024-09-01",
-                           1792854000_000000, 1792854000_000001]),
+                           1792854000_000000, 1792854000_000001, ""]),
         ("upsert_person", [p2, "Kent", "", "", "", 1792854000_000000,
-                           1792854000_000001]),
+                           1792854000_000001, ""]),
     ]
 
 
@@ -662,15 +665,19 @@ def test_person_edit_repushed_and_delete_pruned(world):
 def test_people_via_api_reach_spacetime(world):
     """The real people router (Chawin's /api/people) feeds the bridge."""
     from recallai.memory import people
+    from recallai.api import auth
     from fastapi import FastAPI
     app = FastAPI()
+    app.include_router(auth.router)
     app.include_router(people.router)
     c = TestClient(app)
+    owner = sign_in(c)["user"]["id"]
     pid = c.post("/api/people", json={"name": "Chawin", "relationship": "teammate",
                                       "known_since": "2024-09-01"}).json()["id"]
     world.bridge.sync_once()
     [(_, args)] = world.fake.reducer_calls("upsert_person")
     assert args[:5] == [pid, "Chawin", "", "teammate", "2024-09-01"]
+    assert args[7] == str(owner)
     assert args[5] > 0 and args[6] >= args[5]
     c.delete(f"/api/people/{pid}")
     world.bridge.sync_once()
@@ -720,3 +727,27 @@ def test_db_without_people_table_still_syncs(world):
     counts = world.bridge.sync_once()
     assert counts["sightings"] == 1 and counts["people"] == 0
     assert world.fake.reducer_calls("delete_person") == []
+
+
+# ------------------------------------------------------------ owners
+def test_owner_is_mirrored_as_the_user_id_string(world):
+    """The live dashboard filters on `owner`; "" means not claimed yet."""
+    from recallai.vision.recognition import set_owner
+    set_owner(world.dir / "bag1", 3)
+    sid = add_sighting(owner_id=3)
+    add_alert(sighting_id=sid)
+    with dbmod.connect() as db:
+        db.execute("UPDATE alerts SET owner_id=3")
+        db.commit()
+    world.bridge.sync_once()
+    belongings = {a[0]: a for _, a in world.fake.reducer_calls("upsert_belonging")}
+    assert belongings["bag1"][5] == "3" and belongings["mouse1"][5] == ""
+    [(_, s)] = world.fake.reducer_calls("upsert_sighting")
+    [(_, a)] = world.fake.reducer_calls("upsert_alert")
+    assert s[16] == "3" and a[9] == "3"
+    # claiming later re-pushes the row with its new owner
+    world.fake.clear()
+    set_owner(world.dir / "mouse1", 4)
+    world.bridge.sync_once()
+    assert world.fake.reducer_calls("upsert_belonging") == [
+        ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 0, True, "4"])]

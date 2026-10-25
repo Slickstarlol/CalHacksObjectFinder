@@ -20,4 +20,5 @@ export default {
   message: __t.string(),
   createdAtMicros: __t.i64(),
   dismissed: __t.bool(),
+  owner: __t.string(),
 };

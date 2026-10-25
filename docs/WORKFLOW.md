@@ -76,6 +76,10 @@ cd frontend/dashboard;      npm run build; npm run lint
 - **Paths go through `backend/recallai/paths.py`.** Don't build paths from
   `__file__` in other modules. Image paths in SQLite stay relative to `data/`
   (`snapshots/<file>`).
+- **New endpoint that reads or writes user data?** Add `user=Depends(current_user)`
+  (`recallai/api/auth.py`) and filter by `user["id"]`; never take the owner from
+  the request body or from Grok. Add an isolation test to
+  `backend/tests/test_multiuser.py` (see [AUTH.md](AUTH.md)).
 - **Changed the database schema (`recallai/memory/db.py`)?** Keep `init_db`
   upgrading an existing `memory.db` in place, and add a test like the ones in
   `backend/tests/test_db.py`.

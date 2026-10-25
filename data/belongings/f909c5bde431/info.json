@@ -2,5 +2,6 @@
   "id": "f909c5bde431",
   "name": "cell phone 2",
   "category": "cell phone",
-  "tracking": true
+  "tracking": true,
+  "owner_id": 1
 }
