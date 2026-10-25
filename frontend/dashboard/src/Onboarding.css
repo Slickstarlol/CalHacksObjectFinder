@@ -1,0 +1,562 @@
+/* Add-a-belonging onboarding. One decision per screen, iOS sheet motion,
+   and a Face ID style tick ring that fills as each angle is captured. */
+
+.ob-scrim {
+  --sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: rgba(36, 28, 22, 0.42);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  animation: ob-fade 0.3s ease both;
+}
+
+.ob-scrim.leaving {
+  animation: ob-fade 0.28s ease reverse both;
+}
+
+.ob-sheet {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 18px 28px 28px;
+  border-radius: 32px;
+  background: var(--card);
+  box-shadow: 0 40px 100px rgba(36, 28, 22, 0.28), 0 0 0 1px rgba(36, 28, 22, 0.04);
+  animation: ob-rise 0.55s var(--sheet-ease) both;
+}
+
+.ob-scrim.leaving .ob-sheet {
+  animation: ob-sink 0.28s ease-in both;
+}
+
+.ob-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin-bottom: 8px;
+}
+
+.ob-steps {
+  display: flex;
+  gap: 6px;
+}
+
+.ob-steps i {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--line);
+  transition: width 0.4s var(--sheet-ease), background 0.3s;
+}
+
+.ob-steps i.on {
+  width: 22px;
+  background: var(--ink);
+}
+
+.ob-steps i.done {
+  background: var(--teal);
+}
+
+.ob-x {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--paper-2);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.ob-x:hover {
+  background: var(--line);
+}
+
+.ob-x:active {
+  transform: scale(0.92);
+}
+
+.ob-x svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.ob-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: ob-pane-in 0.5s var(--sheet-ease) both;
+}
+
+.ob-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.ob-body {
+  margin-top: 8px;
+  max-width: 32ch;
+  color: var(--muted);
+  font-size: 0.98rem;
+  text-wrap: pretty;
+}
+
+.ob-body.small {
+  font-size: 0.86rem;
+}
+
+/* Step 1 — name */
+
+.ob-emoji-wrap {
+  position: relative;
+  margin: 6px 0 20px;
+}
+
+.ob-emoji {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 0;
+  border-radius: 99px;
+  font-size: 46px;
+  line-height: 1;
+  background: linear-gradient(160deg, var(--paper), var(--paper-2));
+  box-shadow: inset 0 0 0 1px var(--line), 0 10px 24px rgba(60, 40, 20, 0.1);
+  transition: transform 0.25s var(--sheet-ease);
+}
+
+.ob-emoji:hover {
+  transform: scale(1.04);
+}
+
+.ob-emoji:active {
+  transform: scale(0.96);
+}
+
+.ob-emoji-edit {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--card);
+}
+
+.ob-emoji-edit svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--card);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.ob-emoji-grid {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(8, 36px);
+  gap: 4px;
+  padding: 10px;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 20px 50px rgba(36, 28, 22, 0.2), 0 0 0 1px var(--line);
+  transform: translateX(-50%);
+  animation: ob-pop 0.3s var(--sheet-ease) both;
+}
+
+.ob-emoji-grid button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 20px;
+  background: transparent;
+}
+
+.ob-emoji-grid button:hover,
+.ob-emoji-grid button.on {
+  background: var(--paper-2);
+}
+
+.ob-input {
+  width: 100%;
+  margin-top: 22px;
+  padding: 16px 18px;
+  border: 0;
+  border-radius: 16px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: center;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow 0.2s;
+}
+
+.ob-input::placeholder {
+  color: #a2978b;
+  font-weight: 400;
+}
+
+.ob-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--teal), 0 0 0 4px rgba(12, 107, 88, 0.12);
+}
+
+.ob-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ob-chip {
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 99px;
+  font-size: 0.86rem;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.ob-chip:hover {
+  background: var(--paper-2);
+}
+
+.ob-chip:active {
+  transform: scale(0.95);
+}
+
+.ob-chip.on {
+  color: var(--teal-deep);
+  background: rgba(12, 107, 88, 0.1);
+  box-shadow: inset 0 0 0 1.5px var(--teal);
+}
+
+.ob-primary,
+.ob-secondary {
+  width: 100%;
+  margin-top: 26px;
+  padding: 16px;
+  border: 0;
+  border-radius: 16px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  transition: transform 0.2s var(--sheet-ease), opacity 0.2s, background 0.2s;
+}
+
+.ob-primary {
+  color: #fff;
+  background: var(--ink);
+}
+
+.ob-primary:hover:not(:disabled) {
+  background: #3a2f27;
+}
+
+.ob-primary:active:not(:disabled),
+.ob-secondary:active {
+  transform: scale(0.98);
+}
+
+.ob-primary:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.ob-secondary {
+  margin-top: 18px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.ob-secondary:hover {
+  color: var(--ink);
+}
+
+/* Step 2 — scan */
+
+.ob-viewer {
+  position: relative;
+  width: min(300px, 78vw);
+  aspect-ratio: 1;
+  margin: 4px 0 18px;
+}
+
+.ob-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ob-tick {
+  stroke: var(--line);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: stroke 0.35s ease, transform 0.45s var(--sheet-ease);
+}
+
+.ob-tick.next {
+  stroke: rgba(12, 107, 88, 0.35);
+  animation: ob-breathe 1.1s ease-in-out infinite;
+}
+
+.ob-tick.on {
+  stroke: var(--teal);
+  transform: scaleY(1.45);
+}
+
+.ob-lens {
+  position: absolute;
+  inset: 15%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  font-size: 56px;
+  background: #1d1712;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 14px 30px rgba(36, 28, 22, 0.2);
+  transition: transform 0.6s var(--sheet-ease);
+}
+
+.ob-viewer.holding .ob-lens {
+  transform: scale(0.97);
+}
+
+.ob-lens img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ob-detected {
+  position: absolute;
+  bottom: 9%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 10px;
+  border-radius: 99px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(20, 16, 12, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+  animation: ob-pop 0.35s var(--sheet-ease) both;
+}
+
+.ob-detected i {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: #4fd1a5;
+  box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.25);
+}
+
+.ob-scan-copy {
+  min-height: 92px;
+}
+
+.ob-angles {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.ob-angles span {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--paper-2);
+}
+
+.ob-angles b {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  transition: width 0.6s var(--sheet-ease);
+}
+
+.ob-angles span.on b {
+  width: 100%;
+}
+
+.ob-angles span.next b {
+  width: 100%;
+  background: rgba(12, 107, 88, 0.3);
+  animation: ob-breathe 1.1s ease-in-out infinite;
+}
+
+.ob-meta {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Step 3 — done */
+
+.ob-done {
+  padding-top: 10px;
+}
+
+.ob-badge {
+  position: relative;
+  margin-bottom: 26px;
+}
+
+.ob-photo {
+  display: grid;
+  place-items: center;
+  width: 132px;
+  height: 132px;
+  overflow: hidden;
+  border-radius: 50%;
+  font-size: 60px;
+  background: linear-gradient(160deg, var(--paper), var(--paper-2));
+  box-shadow: 0 0 0 6px rgba(12, 107, 88, 0.14), 0 18px 40px rgba(36, 28, 22, 0.16);
+  animation: ob-pop 0.6s var(--sheet-ease) both;
+}
+
+.ob-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ob-check {
+  position: absolute;
+  right: -6px;
+  bottom: -2px;
+  width: 46px;
+  height: 46px;
+  filter: drop-shadow(0 6px 12px rgba(8, 72, 60, 0.3));
+  animation: ob-pop 0.5s 0.25s var(--sheet-ease) both;
+}
+
+.ob-check circle {
+  fill: var(--teal);
+  stroke: var(--card);
+  stroke-width: 3;
+}
+
+.ob-check path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: ob-draw 0.45s 0.55s ease-out forwards;
+}
+
+.ob-done-line {
+  font-size: 1.08rem;
+  color: var(--ink);
+}
+
+.ob-done .ob-body.small {
+  margin-top: 12px;
+}
+
+@keyframes ob-fade {
+  from { opacity: 0; }
+}
+
+@keyframes ob-rise {
+  from { opacity: 0; transform: translateY(40px) scale(0.96); }
+}
+
+@keyframes ob-sink {
+  to { opacity: 0; transform: translateY(24px) scale(0.97); }
+}
+
+@keyframes ob-pane-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+@keyframes ob-pop {
+  from { opacity: 0; transform: translateX(var(--pop-x, 0)) scale(0.85); }
+}
+
+.ob-emoji-grid,
+.ob-detected {
+  --pop-x: -50%;
+}
+
+@keyframes ob-breathe {
+  50% { opacity: 0.4; }
+}
+
+@keyframes ob-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Phones get a bottom sheet, like the AirPods and AirTag setup cards. */
+@media (max-width: 560px) {
+  .ob-scrim {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .ob-sheet {
+    width: 100%;
+    max-height: 94vh;
+    padding: 14px 22px calc(26px + env(safe-area-inset-bottom));
+    border-radius: 32px 32px 0 0;
+  }
+
+  .ob-emoji-grid {
+    grid-template-columns: repeat(6, 36px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-scrim *,
+  .ob-scrim {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
