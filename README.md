@@ -1,204 +1,125 @@
 # RecallAI – CalHacks Object Finder
 
-**"Where did I leave my keys?" — answered by a camera that remembers.**
+**"Where did I leave my keys?", answered by a camera that remembers.**
 
-RecallAI watches a space through an ordinary webcam, recognizes *your* specific
-belongings (not just "a bottle", but **your** bottle), and keeps a searchable
-memory of where each one was last seen: a snapshot, a close-up, what it was
-next to, when it left the frame, and optionally where your phone was at the
-time. Ask it in plain English and a Grok-powered agent digs through that
-memory and tells you where to look. If something looks forgotten, it warns you
-before you walk away.
+RecallAI watches a room through an ordinary webcam, recognizes *your* things
+(not just "a bottle", but **your** bottle), and remembers where each one was
+last seen, with a photo as proof. Ask in plain English and Khris, our
+Grok-powered assistant, tells you where to look. If you seem to have left
+something behind, it warns you.
 
 ![RecallAI live dashboard](frontend/live-dashboard/screenshots/dashboard-desktop.png)
 
 <p align="center">
-  <img src="frontend/live-dashboard/screenshots/timeline-desktop.png" width="58%" alt="Sighting timeline for one belonging">
+  <img src="frontend/live-dashboard/screenshots/timeline-desktop.png" width="62%" alt="Sighting history for one belonging">
   &nbsp;
   <img src="frontend/live-dashboard/screenshots/dashboard-phone.png" width="24%" alt="Dashboard on a phone">
 </p>
 
-## What it can do
+## What it does
 
-| Capability | What you get |
-|---|---|
-| **Recognizes your items, not just object classes** | YOLO26n spots objects in every frame; DINOv2 compares each one with reference photos you registered, so a stranger's laptop isn't mistaken for yours. |
-| **Remembers every sighting** | Each sighting stores the full frame, a close-up crop, nearby objects, time, and phone GPS. When an item leaves view, the **last frame it was visible in** is kept. |
-| **Describes the location in words** | Grok looks at the sighting and writes a human description: *"Standing at the left edge of the table beside the laptop."* |
-| **Answers natural-language questions** | *"Where did I leave my water bottle?"* — a tool-using agent searches sightings, checks photos, and replies with clickable citations to the exact snapshots it used. |
-| **Proactively flags forgotten items** | Every minute, rules + Grok look for items that left view and stayed gone, or that you walked away from (phone GPS > 150 m away), and raise *Don't forget* alerts. |
-| **Remembers people too** | Save people with a description, relationship and when you met; the agent can use them as context. |
-| **Live, multi-device dashboards** | A SpacetimeDB-backed dashboard updates in real time on laptop or phone: belongings, live activity, alerts, history timeline, and an *Ask RecallAI* chat. |
-| **Private per user** | Accounts with sign-in; every belonging, sighting, alert and person is owned by one user and invisible to others. |
-| **Works offline from the AI** | Without an xAI key, detection, recognition, memory and search still run; only the Grok features are skipped. |
-
-## Use cases
-
-- **The everyday "where is it?"** — Keys, wallet, glasses, earbuds, TV remote. Ask instead of searching every room.
-- **Don't leave without it** — At a hackathon, library, café or office: get an alert when your laptop charger or water bottle stays behind after you've left.
-- **Shared spaces** — Labs, makerspaces, dorms and studios where tools and equipment wander. Each person registers their own items and sees only their own history.
-- **Assistive memory** — For people with memory difficulties (or just very busy days), a gentle, searchable record of where everyday items were put down, plus reminders about the people in their lives.
-- **"Who moved it?" forensics** — The timeline shows exactly when an item left the frame and what the scene looked like at that moment.
-- **Small inventory tracking** — Keep tabs on a handful of valuable items (cameras, instruments, demo hardware) in a room without tagging them with trackers.
-
-## Example questions
-
-```
-Where did I leave my mouse?
-When did I last see my bag, and what was it next to?
-Was my laptop still on the desk at 3 pm?
-What haven't I seen in the last two hours?
-Did I forget anything before I left?
-```
-
-The agent answers with the location, how long ago, and links to the snapshots
-(`#1031`, `#1044`, …) so you can see for yourself. Expand **"How Grok found
-this"** to see each step it took.
+- **Recognizes your items** from a few reference photos, so a stranger's laptop isn't mistaken for yours.
+- **Remembers every sighting:** a photo, the time, what the item was next to, and your phone's GPS.
+- **Keeps the last frame** an item was visible in. That's usually the moment you put it down.
+- **Answers questions** like *"Where did I leave my water bottle?"*, with links to the snapshots it used.
+- **Warns you** about items that left view and stayed gone, or that you walked away from.
+- **Updates live** on laptop and phone, with a private account for each user.
 
 ## How it works
 
-```
- Webcam ─▶ YOLO26n  ─▶ DINOv2 "is it mine?" ─▶ Recorder (seen / left_view)
-            detect      vs. your reference        │  snapshot + crop + nearby objects + GPS
-                        photos (threshold 0.70)   ▼
-                                           SQLite memory ──▶ SpacetimeDB ──▶ Live dashboard (real time)
-                                                  │
-                     Grok (xAI): describe sightings · answer questions · flag forgotten items
+```mermaid
+flowchart LR
+    cam["Webcam"] --> yolo["YOLO26n<br/>finds objects"] --> dino["DINOv2<br/>is it mine?"] --> db[("Memory<br/>SQLite + photos")]
+    db --> khris["Khris (Grok)<br/>describes, answers, alerts"]
+    db --> stdb[("SpacetimeDB")] --> dash["Live dashboard"]
 ```
 
-1. **Register** an item once with 5 camera angles (one click in the dashboard).
-2. **Watch** — the camera loop detects objects, confirms which ones are yours, and logs a `seen` event (at most every 15 s) or a `left_view` event (after 5 s out of view).
-3. **Interpret** — Grok verifies each new sighting against your reference photos and describes where it is.
-4. **Ask & alert** — query from the dashboard, the search page, or the terminal; the watcher raises alerts on its own.
+1. **Register:** show the camera an item from 3 angles.
+2. **Detect:** YOLO26n finds objects in each frame ("a bottle, here").
+3. **Recognize:** DINOv2 compares each object with your reference photos; a similarity of 0.70 or more means it's yours.
+4. **Remember:** a `seen` snapshot at most every 15 s, and a `left_view` snapshot 5 s after the item disappears.
+5. **Understand:** Khris (Grok) double-checks the match, describes where the item is, answers your questions and decides which alerts to send.
+6. **Show:** a sync bridge copies everything to SpacetimeDB, which pushes it to every open dashboard instantly.
 
-Built with Python, FastAPI, Ultralytics YOLO26n, DINOv2, SQLite, Grok (xAI API),
-SpacetimeDB, React + TypeScript, and Vite. Full design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Without an xAI API key, everything except Khris still works. More detail: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md).
+
+## Get started (Windows)
+
+You need a webcam, [Python](https://www.python.org/downloads/) 3.10+ and
+[Node.js](https://nodejs.org) 22. An [xAI API key](https://console.x.ai) is optional.
+
+```powershell
+git clone https://github.com/Slickstarlol/CalHacksObjectFinder.git
+cd CalHacksObjectFinder
+.\scripts\dev.ps1 setup
+```
+
+1. *(Optional)* Put `XAI_API_KEY=xai-...` in a `.env` file at the repo root (it's git-ignored).
+2. Double-click **`launcher\RecallAI.bat`** and press **Start all**. This starts the server, the camera and the dashboard ([launcher guide](launcher/README.md)).
+3. In the dashboard (http://localhost:5174), **create an account**. The first account takes over any data recorded before accounts existed.
+4. Press **+** next to *Your belongings* and show your item to the camera from 3 angles.
+5. Ask: *"Where did I leave my water bottle?"*
+
+**On your phone:** open `http://<laptop-ip>:8000/` to share GPS, and `http://<laptop-ip>:5174` for the dashboard.
+Phones only share GPS with `https://` pages, so for real GPS open the server through an HTTPS tunnel
+(e.g. `cloudflared tunnel --url http://localhost:8000`).
+
+## How we built it
+
+Built at **CalHacks** (October 24–25, 2026) by Kentstar Harsono, jgsam, Chawin and Rihaan Merali.
+
+- **Recognize by example, not by training.** Adding an item takes a few photos and no training step.
+- **DINOv2 over CLIP.** We started with CLIP, but on our own frames DINOv2 separated "my bottle" from "a bottle" 3–4× better. We picked the 0.70 threshold from measurements: same item 0.77–0.95, other objects ≤ 0.64.
+- **Remember moments, not video.** Two kinds of snapshot (`seen` and `left_view`) answer "where is it?" without recording everything.
+- **Grok on top, not underneath.** Detection and memory run locally; Khris adds a second opinion, descriptions and answers, and cites the snapshots it used so you can check them.
+- **SQLite for memory, SpacetimeDB for live updates.** SQLite is simple and testable; SpacetimeDB pushes changes to every browser.
+- **Private and tested.** Every record belongs to one account. There are 250+ backend tests with Grok mocked, and CI runs on every push.
 
 ## Repository layout
 
 ```
-backend/          Python app: the recallai package + tests
-  recallai/
-    paths.py      every filesystem path (data/, models/, .env ...), env-overridable
-    api/          FastAPI server, search API, static pages (search.html, gps.html)
-    vision/       webcam loop, recognition, recorder, register, enrollment, live feed
-    memory/       SQLite schema, accounts (users.py), time/duration math, people
-    ai/           Grok client, interpreter, agent, watcher, check_grok
-    sync/         SQLite -> SpacetimeDB bridge
-  tests/          pytest suite + fixtures
-frontend/
-  dashboard/      camera / enrollment / people dashboard (React JSX, :5173)
-  live-dashboard/ live SpacetimeDB dashboard (React + TS, :5174, built into :8000/app/)
-spacetimedb/      SpacetimeDB module (tables + reducers)
-data/             belongings/ (committed photos); memory.db and snapshots/ (git-ignored)
-models/           yolo26n.pt
-docs/             ARCHITECTURE.md, WORKFLOW.md, SPACETIME_CONTRACT.md, AUTH.md
-scripts/          dev.ps1 / dev.sh helpers, migrate_layout.py
-launcher/         RecallAI.bat control panel: start/stop each step (see launcher/README.md)
+backend/recallai/   Python app: vision/ (camera, YOLO, DINOv2), memory/ (SQLite, accounts),
+                    ai/ (Khris: interpreter, agent, watcher), sync/ (SpacetimeDB bridge), api/ (FastAPI)
+backend/tests/      pytest suite
+frontend/live-dashboard/   React + TypeScript dashboard (:5174, or built into :8000/app/)
+spacetimedb/        SpacetimeDB module (tables + reducers)
+launcher/           one-click control panel (RecallAI.bat)
+data/               belongings/ (reference photos); memory.db and snapshots/ (git-ignored)
+docs/               how it works, architecture, accounts, data contract, team workflow
 ```
 
-## Getting started
+## More docs
 
-**Quick start:** double-click `launcher\RecallAI.bat`. A control panel opens in your
-browser with a switch for each step (SpacetimeDB, server, camera, dashboards...);
-**Start all** starts the switched-on steps one after another. See [launcher/README.md](launcher/README.md).
+[How it works](docs/HOW_IT_WORKS.md) ·
+[Architecture](docs/ARCHITECTURE.md) ·
+[Accounts and privacy](docs/AUTH.md) ·
+[SpacetimeDB contract](docs/SPACETIME_CONTRACT.md) ·
+[Team workflow and tests](docs/WORKFLOW.md) ·
+[Launcher](launcher/README.md)
 
-How the parts fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Branches, PRs, CI and the per-part test commands: [docs/WORKFLOW.md](docs/WORKFLOW.md).
+<details>
+<summary><b>Running without the launcher, settings, and tests</b></summary>
 
-### Setup (Windows PowerShell, from the repository root)
+Run each part in its own terminal (`scripts/dev.sh` takes the same commands on macOS/Linux):
+
+```powershell
+.\scripts\dev.ps1 server           # API, sign-in, search page, phone GPS page (:8000)
+.\scripts\dev.ps1 camera           # webcam + recognition (--camera 1, --threshold 0.75)
+.\scripts\dev.ps1 live-dashboard   # http://localhost:5174
+.\scripts\dev.ps1 ask "where is my mouse?"
+.\scripts\dev.ps1 register --list  # registered items (or add one: --name "My Keys" --category remote)
 ```
-.\scripts\dev.ps1 setup      # pip install -r backend/requirements.txt, pip install -e backend, npm install x3
-setx XAI_API_KEY "xai-..."   # or put XAI_API_KEY=... in .env at the repo root; key from https://console.x.ai
-```
-Without the dev script: `pip install -r backend/requirements.txt` and
-`pip install -e backend` (or set `$env:PYTHONPATH="backend"` in each terminal).
-The first run downloads DINOv2 (~90 MB). Without an API key everything still
-runs; the Grok features are skipped. Check the key with `.\scripts\dev.ps1 check-grok`.
 
-**Updating an older checkout?** Run `python scripts/migrate_layout.py` once. It
-moves your root-level `memory.db*`, `snapshots/` and unregistered `belongings/`
-files into `data/` (never overwrites; `.env` and `.spacetime_token` stay at the root).
+Settings (environment or `.env`):
 
-### First launch: create your account
-Start the server (step 2 below), open a dashboard (http://localhost:5173, or
-http://localhost:8000/app/ after building the live dashboard) and choose
-**Create an account**. Do this first: **the first account ever created takes
-over everything recorded before accounts existed** (belongings in
-`data/belongings/`, sightings, alerts, people). Later accounts start empty and
-only ever see their own data. Every dashboard and page asks you to sign in;
-**Sign out** is in the top bar. Details, endpoints and security notes:
-[docs/AUTH.md](docs/AUTH.md).
-
-### Use
-1. **Register belongings**: in the camera dashboard press **Add** (5 camera
-   angles; the item is yours), or from the command line (5–8 photos each,
-   different angles and lighting):
-   ```
-   python -m recallai.vision.register --list                            # what's registered, owners, missing photos
-   python -m recallai.vision.register --id 3617519a583a                 # add photos to "My Bag"
-   python -m recallai.vision.register --user kent --name "My Keys" --category "cell phone"
-   ```
-   `--user` picks the owning account (optional when only one account exists;
-   with none yet, the item is claimed by the first account).
-   In the window: **S** saves an auto-cropped photo (green box), **B** lets you draw the box, **Q** finishes.
-2. **Server** (accounts, search page, phone GPS, API, SpacetimeDB sync): `.\scripts\dev.ps1 server`
-   (= `python -m uvicorn recallai.api.server:app --host 0.0.0.0 --port 8000`)
-3. **Camera:** `.\scripts\dev.ps1 camera` (= `python -m recallai.vision.webcam`; `--camera 0`, `--threshold 0.75`).
-   It's a trusted local device: on the same machine as the server it needs no
-   login and tags each sighting with the owner of the belonging it saw. A camera
-   on another machine needs `RECALLAI_DEVICE_KEY` (same value for both) and
-   `RECALLAI_SERVER_URL`.
-4. **Search:** http://localhost:8000/search (sign in), or ask from the terminal
-   (unscoped, as the machine owner): `python -m recallai.ai.agent "where did I leave my mouse?"`.
-   **Phone GPS:** open http://<laptop-ip>:8000/ on your phone and sign in; the
-   location is stored for your account only.
-5. **Camera dashboard:** `.\scripts\dev.ps1 dashboard` → http://localhost:5173
-   (live camera, last locations, people; **Add** enrolls a new belonging from 5 camera angles).
-6. **Live dashboard** (optional, SpacetimeDB), 4 terminals:
-   ```
-   .\scripts\dev.ps1 spacetime        # database on :3000 (install: iwr https://windows.spacetimedb.com -useb | iex)
-   .\scripts\dev.ps1 publish          # once per module change
-   .\scripts\dev.ps1 server           # API + bridge ("Dashboard sync: ...")
-   .\scripts\dev.ps1 camera
-   .\scripts\dev.ps1 live-dashboard   # http://localhost:5174
-   ```
-   Or `cd frontend/live-dashboard; npm run build` once and use http://localhost:8000/app/.
-   From a phone on the same Wi-Fi: http://<laptop-ip>:5174 (or :8000/app/).
-
-Settings (environment or `.env`): `XAI_API_KEY`, `RECALL_VISION_MODEL` /
-`RECALL_AGENT_MODEL` (default `grok-4.7`), `SPACETIME_URL` (default
-`http://localhost:3000`), `SPACETIME_DB` (default `recallai`), `SPACETIME_SYNC=0`
-to turn the bridge off, `RECALLAI_DEVICE_KEY` / `RECALLAI_SERVER_URL` for a
-camera on another machine, and `RECALLAI_DATA_DIR` etc. to move data (see
-`backend/recallai/paths.py`). Accounts: `python -m recallai.memory.users list`,
-`python -m recallai.memory.users claim <username>` (give ownerless data to an account).
-
-Reset everything (also deletes all accounts): delete `data/memory.db`, then
-`cd spacetimedb; spacetime publish --server local --delete-data=always recallai`
-(the bridge re-registers and resyncs by itself). If the database was published by
-someone else, republish with `--delete-data` (or delete `.spacetime_token` and republish).
-Describe sightings saved before the key was set: `python -m recallai.ai.interpreter --backfill`.
-
-### Detection rules and tuning
-| Event | When |
+| Setting | Default |
 |---|---|
-| `seen` | Item is in view; saved at most every 15 s |
-| `left_view` | Item has been out of view for 5 s; keeps the **last frame it was visible in** |
+| `XAI_API_KEY` | none: Khris is off |
+| `RECALL_VISION_MODEL` / `RECALL_AGENT_MODEL` | `grok-4.7` |
+| `SPACETIME_URL` / `SPACETIME_DB` | `https://maincloud.spacetimedb.com` / `calhacks-l28u4` |
+| `SPACETIME_SYNC=0` | turns the SpacetimeDB sync off |
 
-Match threshold (DINOv2): 0.70. Measured on this project's own frames:
-same item across frames 0.77–0.95, other chairs in the same room ≤0.64,
-strangers' objects from COCO ≤0.50. If someone else's item gets labelled as
-yours, raise `--threshold`. If yours is missed, add more reference photos.
-YOLO confuses some classes (a gaming mouse up close came out as
-"cell phone"/"remote"), so a belonging is also checked against related classes
-(`CONFUSABLE_GROUPS` in `backend/recallai/vision/recognition.py`).
+Tuning: if someone else's item is labelled as yours, raise `--threshold`; if yours is missed, add more reference photos.
 
-### Tests
-```
-.\scripts\dev.ps1 test        # everything below
-python -m pytest -m "not slow"  # backend, fast (Grok mocked), no downloads
-python -m pytest                # backend, incl. real-frame YOLO + DINOv2 tests
-```
-CI (`.github/workflows/ci.yml`) runs the backend on Python 3.10 and 3.12 plus
-the module, live dashboard and camera dashboard checks on every push and PR.
+Tests: `.\scripts\dev.ps1 test` runs everything; `python -m pytest -m "not slow"` runs the fast backend tests.
+</details>

@@ -8,7 +8,6 @@
 | Python tests + fixtures | `backend/tests/` | backend | same |
 | SpacetimeDB module | `spacetimedb/` | module | `npm ci`, `tsc --noEmit`, `vitest` |
 | Live dashboard (React + TS, SpacetimeDB) | `frontend/live-dashboard/` | live dashboard | `npm ci`, `npm run build`, `vitest` |
-| Camera / people dashboard (React JSX) | `frontend/dashboard/` | Chawin | `npm ci`, `npm run build`, `npm run lint` |
 | Registered items (committed photos) | `data/belongings/` | everyone | - |
 | Runtime data (git-ignored) | `data/memory.db`, `data/snapshots/` | local only | - |
 | YOLO weights | `models/` | - | - |
@@ -33,7 +32,7 @@
 
 One-time setup (Windows PowerShell; `scripts/dev.sh` takes the same commands on macOS/Linux):
 ```
-.\scripts\dev.ps1 setup     # pip install, pip install -e backend, npm install x3, migrate old data
+.\scripts\dev.ps1 setup     # pip install, pip install -e backend, npm install x2, migrate old data
 ```
 
 | What | Command | Raw command |
@@ -46,7 +45,6 @@ One-time setup (Windows PowerShell; `scripts/dev.sh` takes the same commands on 
 | SpacetimeDB server | `.\scripts\dev.ps1 spacetime` | `spacetime start` |
 | Publish the module | `.\scripts\dev.ps1 publish` | `cd spacetimedb; spacetime publish --server local recallai` |
 | One-off sync | `.\scripts\dev.ps1 sync-once` | `python -m recallai.sync.spacetime_bridge --once` |
-| Camera dashboard | `.\scripts\dev.ps1 dashboard` | `cd frontend/dashboard; npm run dev` (:5173) |
 | Live dashboard | `.\scripts\dev.ps1 live-dashboard` | `cd frontend/live-dashboard; npm run dev` (:5174) |
 | All tests | `.\scripts\dev.ps1 test` | see below |
 
@@ -61,7 +59,6 @@ python -m pytest -m "not slow"     # backend, fast (Grok mocked, no downloads)
 python -m pytest                   # backend, everything (YOLO + DINOv2 on real frames)
 cd spacetimedb;             npx tsc --noEmit -p .; npx vitest run
 cd frontend/live-dashboard; npm run build; npx vitest run
-cd frontend/dashboard;      npm run build; npm run lint
 ```
 
 ## Rules that keep the parts in sync

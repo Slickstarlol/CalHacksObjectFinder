@@ -9,16 +9,18 @@
                  │                                                ▼
                  ▼ writes                                 recallai.api.server (FastAPI :8000)
    data/memory.db (SQLite, primary store)  ◀──── reads ────  /api/auth/*, /search, / (GPS), /api/*, /snapshots/*, /app/
-   data/snapshots/ (frames + crops)                               │        ▲
-                 │                                                │        │ /api, /snapshots (Vite proxy)
-                 │  recallai.sync.spacetime_bridge                │   frontend/dashboard (:5173)
-                 │  (thread inside the server, SPACETIME_SYNC=0 off)   camera feed, enrollment, people
-                 ▼
-   SpacetimeDB "recallai" (:3000, module in spacetimedb/)
-                 │  live WebSocket subscription
-                 ▼
+   data/snapshots/ (frames + crops)                               │
+                 │                                                │ /api, /snapshots (Vite proxy)
+                 │  recallai.sync.spacetime_bridge                │
+                 │  (thread inside the server, SPACETIME_SYNC=0 off)
+                 ▼                                                │
+   SpacetimeDB: Maincloud "calhacks-l28u4" by default             │
+   (or a local server on :3000; module in spacetimedb/)           │
+                 │  live WebSocket subscription                   │
+                 ▼                                                ▼
    frontend/live-dashboard (:5174, or built into /app/ on :8000)
-   belongings, sightings, alerts (dismiss → copied back to SQLite), people, Grok chat
+   live camera, enrollment (+), belongings, sightings, alerts
+   (dismiss → copied back to SQLite), people, Grok chat
 ```
 
 ## Grok (xAI) features: `recallai.ai`

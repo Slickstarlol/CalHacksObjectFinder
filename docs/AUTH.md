@@ -7,12 +7,12 @@ belonging it matched.
 
 ## The workflow
 
-1. **Create an account** in either dashboard (http://localhost:5173 or
-   http://localhost:5174 / http://localhost:8000/app/), or on the GPS / search
+1. **Create an account** in the live dashboard (http://localhost:5174 or
+   http://localhost:8000/app/), or on the GPS / search
    pages served by the server. Username 3–32 characters (`a-z 0-9 . _ -`,
    case-insensitive), password at least 8 characters, optional display name.
    Registering signs you in.
-2. **Register a belonging.** In the camera dashboard press **Add** and show the
+2. **Register a belonging.** In the live dashboard press **+** and show the
    object to the camera: the new belonging is yours (`"owner_id"` in its
    `data/belongings/<id>/info.json`). From the command line:
    `python -m recallai.vision.register --user <username> --name "My Keys" --category remote`.
@@ -133,8 +133,8 @@ belonging's **owner's** fix to its sightings; the watcher's "moved away" rule
 compares each item with its owner's phone, and the agent's `get_context` /
 distances use the asking user's phone.
 
-**Enrollment** ("Add" in the camera dashboard): the camera can enroll one item
-at a time, owned by whoever pressed Add. The server passes that user's id to
+**Enrollment** ("+" in the live dashboard): the camera can enroll one item
+at a time, owned by whoever pressed it. The server passes that user's id to
 the camera with the enroll status, the camera writes it into the new
 `info.json`, and the server also tags the belonging when the camera reports
 its id. Other users see "the camera is busy" (without the item's name) and
