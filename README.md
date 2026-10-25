@@ -1,11 +1,80 @@
 # RecallAI – CalHacks Object Finder
 
-Remembers where **your** belongings were last seen. YOLO finds objects, DINOv2
-checks whether each one is yours (compared with photos you register), and each
-sighting is saved with a snapshot, a close-up, nearby objects, and optional
-phone GPS. Grok (xAI) describes where things are, answers questions, and flags
-items you may have forgotten. Each person signs in with their own account and
-only sees their own belongings, sightings, alerts and people ([docs/AUTH.md](docs/AUTH.md)).
+**"Where did I leave my keys?" — answered by a camera that remembers.**
+
+RecallAI watches a space through an ordinary webcam, recognizes *your* specific
+belongings (not just "a bottle", but **your** bottle), and keeps a searchable
+memory of where each one was last seen: a snapshot, a close-up, what it was
+next to, when it left the frame, and optionally where your phone was at the
+time. Ask it in plain English and a Grok-powered agent digs through that
+memory and tells you where to look. If something looks forgotten, it warns you
+before you walk away.
+
+![RecallAI live dashboard](frontend/live-dashboard/screenshots/dashboard-desktop.png)
+
+<p align="center">
+  <img src="frontend/live-dashboard/screenshots/timeline-desktop.png" width="58%" alt="Sighting timeline for one belonging">
+  &nbsp;
+  <img src="frontend/live-dashboard/screenshots/dashboard-phone.png" width="24%" alt="Dashboard on a phone">
+</p>
+
+## What it can do
+
+| Capability | What you get |
+|---|---|
+| **Recognizes your items, not just object classes** | YOLO26n spots objects in every frame; DINOv2 compares each one with reference photos you registered, so a stranger's laptop isn't mistaken for yours. |
+| **Remembers every sighting** | Each sighting stores the full frame, a close-up crop, nearby objects, time, and phone GPS. When an item leaves view, the **last frame it was visible in** is kept. |
+| **Describes the location in words** | Grok looks at the sighting and writes a human description: *"Standing at the left edge of the table beside the laptop."* |
+| **Answers natural-language questions** | *"Where did I leave my water bottle?"* — a tool-using agent searches sightings, checks photos, and replies with clickable citations to the exact snapshots it used. |
+| **Proactively flags forgotten items** | Every minute, rules + Grok look for items that left view and stayed gone, or that you walked away from (phone GPS > 150 m away), and raise *Don't forget* alerts. |
+| **Remembers people too** | Save people with a description, relationship and when you met; the agent can use them as context. |
+| **Live, multi-device dashboards** | A SpacetimeDB-backed dashboard updates in real time on laptop or phone: belongings, live activity, alerts, history timeline, and an *Ask RecallAI* chat. |
+| **Private per user** | Accounts with sign-in; every belonging, sighting, alert and person is owned by one user and invisible to others. |
+| **Works offline from the AI** | Without an xAI key, detection, recognition, memory and search still run; only the Grok features are skipped. |
+
+## Use cases
+
+- **The everyday "where is it?"** — Keys, wallet, glasses, earbuds, TV remote. Ask instead of searching every room.
+- **Don't leave without it** — At a hackathon, library, café or office: get an alert when your laptop charger or water bottle stays behind after you've left.
+- **Shared spaces** — Labs, makerspaces, dorms and studios where tools and equipment wander. Each person registers their own items and sees only their own history.
+- **Assistive memory** — For people with memory difficulties (or just very busy days), a gentle, searchable record of where everyday items were put down, plus reminders about the people in their lives.
+- **"Who moved it?" forensics** — The timeline shows exactly when an item left the frame and what the scene looked like at that moment.
+- **Small inventory tracking** — Keep tabs on a handful of valuable items (cameras, instruments, demo hardware) in a room without tagging them with trackers.
+
+## Example questions
+
+```
+Where did I leave my mouse?
+When did I last see my bag, and what was it next to?
+Was my laptop still on the desk at 3 pm?
+What haven't I seen in the last two hours?
+Did I forget anything before I left?
+```
+
+The agent answers with the location, how long ago, and links to the snapshots
+(`#1031`, `#1044`, …) so you can see for yourself. Expand **"How Grok found
+this"** to see each step it took.
+
+## How it works
+
+```
+ Webcam ─▶ YOLO26n  ─▶ DINOv2 "is it mine?" ─▶ Recorder (seen / left_view)
+            detect      vs. your reference        │  snapshot + crop + nearby objects + GPS
+                        photos (threshold 0.70)   ▼
+                                           SQLite memory ──▶ SpacetimeDB ──▶ Live dashboard (real time)
+                                                  │
+                     Grok (xAI): describe sightings · answer questions · flag forgotten items
+```
+
+1. **Register** an item once with 5 camera angles (one click in the dashboard).
+2. **Watch** — the camera loop detects objects, confirms which ones are yours, and logs a `seen` event (at most every 15 s) or a `left_view` event (after 5 s out of view).
+3. **Interpret** — Grok verifies each new sighting against your reference photos and describes where it is.
+4. **Ask & alert** — query from the dashboard, the search page, or the terminal; the watcher raises alerts on its own.
+
+Built with Python, FastAPI, Ultralytics YOLO26n, DINOv2, SQLite, Grok (xAI API),
+SpacetimeDB, React + TypeScript, and Vite. Full design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Repository layout
 
 ```
 backend/          Python app: the recallai package + tests
@@ -28,6 +97,8 @@ scripts/          dev.ps1 / dev.sh helpers, migrate_layout.py
 launcher/         RecallAI.bat control panel: start/stop each step (see launcher/README.md)
 ```
 
+## Getting started
+
 **Quick start:** double-click `launcher\RecallAI.bat`. A control panel opens in your
 browser with a switch for each step (SpacetimeDB, server, camera, dashboards...);
 **Start all** starts the switched-on steps one after another. See [launcher/README.md](launcher/README.md).
@@ -35,7 +106,7 @@ browser with a switch for each step (SpacetimeDB, server, camera, dashboards...)
 How the parts fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Branches, PRs, CI and the per-part test commands: [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-## Setup (Windows PowerShell, from the repository root)
+### Setup (Windows PowerShell, from the repository root)
 ```
 .\scripts\dev.ps1 setup      # pip install -r backend/requirements.txt, pip install -e backend, npm install x3
 setx XAI_API_KEY "xai-..."   # or put XAI_API_KEY=... in .env at the repo root; key from https://console.x.ai
@@ -49,7 +120,7 @@ runs; the Grok features are skipped. Check the key with `.\scripts\dev.ps1 check
 moves your root-level `memory.db*`, `snapshots/` and unregistered `belongings/`
 files into `data/` (never overwrites; `.env` and `.spacetime_token` stay at the root).
 
-## First launch: create your account
+### First launch: create your account
 Start the server (step 2 below), open a dashboard (http://localhost:5173, or
 http://localhost:8000/app/ after building the live dashboard) and choose
 **Create an account**. Do this first: **the first account ever created takes
@@ -59,7 +130,7 @@ only ever see their own data. Every dashboard and page asks you to sign in;
 **Sign out** is in the top bar. Details, endpoints and security notes:
 [docs/AUTH.md](docs/AUTH.md).
 
-## Use
+### Use
 1. **Register belongings**: in the camera dashboard press **Add** (5 camera
    angles; the item is yours), or from the command line (5–8 photos each,
    different angles and lighting):
@@ -109,7 +180,7 @@ Reset everything (also deletes all accounts): delete `data/memory.db`, then
 someone else, republish with `--delete-data` (or delete `.spacetime_token` and republish).
 Describe sightings saved before the key was set: `python -m recallai.ai.interpreter --backfill`.
 
-## How it decides
+### Detection rules and tuning
 | Event | When |
 |---|---|
 | `seen` | Item is in view; saved at most every 15 s |
@@ -123,7 +194,7 @@ YOLO confuses some classes (a gaming mouse up close came out as
 "cell phone"/"remote"), so a belonging is also checked against related classes
 (`CONFUSABLE_GROUPS` in `backend/recallai/vision/recognition.py`).
 
-## Tests
+### Tests
 ```
 .\scripts\dev.ps1 test        # everything below
 python -m pytest -m "not slow"  # backend, fast (Grok mocked), no downloads
