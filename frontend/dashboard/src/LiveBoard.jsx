@@ -168,7 +168,7 @@ export default function LiveBoard({
           <p className="kicker">01 — Camera</p>
           <h2>What the vision loop sees</h2>
           <p className="lede">
-            This is the annotated webcam from <code>webcam.py</code>: green boxes are
+            This is the annotated webcam from <code>recallai.vision.webcam</code>: green boxes are
             your belongings, and the other boxes are objects YOLO is tracking.
           </p>
         </div>
@@ -188,7 +188,7 @@ export default function LiveBoard({
                   ) : (
                     <>
                       <p>The camera is off. Start the vision loop, then this frame fills in.</p>
-                      <code>python webcam.py</code>
+                      <code>python -m recallai.vision.webcam</code>
                     </>
                   )}
                 </div>
@@ -307,7 +307,8 @@ export default function LiveBoard({
           </p>
         ) : belongings.length === 0 ? (
           <p className="empty">
-            Nothing is registered yet. Press <b>Add</b> on the camera to set one up.
+            Nothing is registered yet. Press <b>Add</b> on the camera to set one up, or
+            run <code>python -m recallai.vision.register</code>.
           </p>
         ) : (
           <div className="loc-grid">

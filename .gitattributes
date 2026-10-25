@@ -1,2 +1,4 @@
 # shell scripts must keep LF endings, even on Windows checkouts
 *.sh text eol=lf
+# batch files must keep CRLF endings or cmd.exe misreads them
+*.bat text eol=crlf

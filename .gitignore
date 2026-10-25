@@ -28,3 +28,9 @@ venv/
 # node packages and builds
 node_modules/
 dist/
+
+# launcher: logs, your switch choices, PyInstaller output
+launcher/logs/
+launcher/settings.local.json
+launcher/build/
+launcher/RecallAI.exe

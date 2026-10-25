@@ -1,6 +1,8 @@
 """RecallAI live camera: watch for YOUR belongings and remember where they were.
 
-Run server.py first if you want phone GPS attached to sightings (optional).
+Run it with:  python -m recallai.vision.webcam  [--camera 0]
+Start the server first (python -m uvicorn recallai.api.server:app --port 8000)
+so the dashboard shows the live frame and phone GPS is attached (optional).
 """
 
 import argparse

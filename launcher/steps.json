@@ -1,0 +1,88 @@
+{
+  "_comment": "RecallAI launcher steps, run top to bottom. 'enabled' is the default; your own on/off choices are saved in settings.local.json. {python}/{npm}/{spacetime} are filled in automatically. cwd is relative to the repository root.",
+  "steps": [
+    {
+      "id": "check-grok",
+      "name": "Check Grok key",
+      "description": "Verifies XAI_API_KEY (.env) works before anything starts. Optional.",
+      "command": ["{python}", "-m", "recallai.ai.check_grok"],
+      "cwd": ".",
+      "enabled": false,
+      "needs": ["python"],
+      "ready": {"type": "exit"},
+      "timeout": 90
+    },
+    {
+      "id": "spacetime",
+      "name": "SpacetimeDB",
+      "description": "Local SpacetimeDB database on port 3000 (only needed for the live dashboard).",
+      "command": ["{spacetime}", "start"],
+      "cwd": ".",
+      "enabled": false,
+      "needs": ["spacetime"],
+      "ready": {"type": "http", "url": "http://localhost:3000/v1/ping"},
+      "timeout": 60
+    },
+    {
+      "id": "publish",
+      "name": "Publish SpacetimeDB module",
+      "description": "Uploads spacetimedb/ as database 'recallai' (safe to repeat; keeps data).",
+      "command": ["{spacetime}", "publish", "--server", "local", "--yes", "recallai"],
+      "cwd": "spacetimedb",
+      "enabled": false,
+      "needs": ["spacetime", "npm"],
+      "install_if_missing": "node_modules",
+      "ready": {"type": "exit"},
+      "timeout": 300
+    },
+    {
+      "id": "server",
+      "name": "RecallAI server",
+      "description": "FastAPI on port 8000: search page, Grok agent, alerts, camera feed, SpacetimeDB sync.",
+      "command": ["{python}", "-m", "uvicorn", "recallai.api.server:app", "--host", "0.0.0.0", "--port", "8000"],
+      "cwd": ".",
+      "enabled": true,
+      "needs": ["python"],
+      "ready": {"type": "http", "url": "http://localhost:8000/api/belongings"},
+      "timeout": 180,
+      "open_url": ""
+    },
+    {
+      "id": "camera",
+      "name": "Camera",
+      "description": "Webcam + YOLO + DINOv2 recognition. Opens its own video window (press Q there to quit).",
+      "command": ["{python}", "-m", "recallai.vision.webcam"],
+      "cwd": ".",
+      "enabled": true,
+      "needs": ["python"],
+      "ready": {"type": "alive", "seconds": 20},
+      "timeout": 120
+    },
+    {
+      "id": "dashboard",
+      "name": "Camera dashboard",
+      "description": "Live camera, last locations, people and the Add button (port 5173). Opens in your browser.",
+      "command": ["{npm}", "run", "dev"],
+      "cwd": "frontend/dashboard",
+      "enabled": true,
+      "needs": ["npm"],
+      "install_if_missing": "node_modules",
+      "ready": {"type": "http", "url": "http://localhost:5173/"},
+      "timeout": 240,
+      "open_url": "http://localhost:5173/"
+    },
+    {
+      "id": "live-dashboard",
+      "name": "Live dashboard (SpacetimeDB)",
+      "description": "Real-time dashboard on port 5174. Needs SpacetimeDB + Publish above.",
+      "command": ["{npm}", "run", "dev"],
+      "cwd": "frontend/live-dashboard",
+      "enabled": false,
+      "needs": ["npm"],
+      "install_if_missing": "node_modules",
+      "ready": {"type": "http", "url": "http://localhost:5174/"},
+      "timeout": 240,
+      "open_url": "http://localhost:5174/"
+    }
+  ]
+}
