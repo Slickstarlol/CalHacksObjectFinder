@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
-import type { Belonging, Sighting } from '../module_bindings/types';
+import type { Belonging, Person, Sighting } from '../module_bindings/types';
 import {
   accuracyTone,
   boxPercent,
   feedAccuracy,
   otherDetections,
   percent,
+  unnamedPeople,
+  type Box,
   type CameraState,
 } from '../lib/live';
+import type { LabelResult } from '../lib/people';
 import { formatClock, formatShortAgo, microsToDate } from '../lib/time';
 import { CameraIcon } from './Icons';
+import { PersonBoxes } from './PersonBoxes';
 
 type Props = {
   camera?: CameraState;
@@ -17,6 +21,11 @@ type Props = {
   missing: { belonging: Belonging; sighting: Sighting }[];
   now: Date;
   onSelect: (belongingId: string) => void;
+  /** Your people, so a recognized person can be renamed from the feed. */
+  people?: readonly Person[];
+  onRenamePerson?: (person: Person, name: string) => Promise<void>;
+  /** Names the person in a box (double-click). Omitted -> people boxes are read-only. */
+  onLabelPerson?: (bbox: Box, name: string, personId?: number) => Promise<LabelResult>;
 };
 
 type Row = {
@@ -58,13 +67,16 @@ function AccuracyMeter({ pct, width = 40 }: { pct: number | null; width?: number
   );
 }
 
-export function LiveFeed({ camera, missing, now, onSelect }: Props) {
+export function LiveFeed({ camera, missing, now, onSelect, people = [], onRenamePerson, onLabelPerson }: Props) {
   const status = camera?.status ?? 'offline';
   const online = status === 'online';
   const inView = online ? camera!.inView : [];
-  const others = online ? otherDetections(camera!.detections, inView) : [];
-  const people = others.find(g => g.category === 'person');
+  const named = online ? camera!.people : [];
+  const unnamed = online ? unnamedPeople(camera!.detections, named) : [];
+  const others = online ? otherDetections(camera!.detections, inView, named) : [];
+  const strangers = others.find(g => g.category === 'person');
   const objects = others.filter(g => g.category !== 'person');
+  const peopleCount = named.length + (strangers?.count ?? 0);
   const acc = feedAccuracy(inView);
   const w = camera?.width ?? null;
   const h = camera?.height ?? null;
@@ -93,14 +105,23 @@ export function LiveFeed({ camera, missing, now, onSelect }: Props) {
         belongingId: belonging.id,
       };
     }),
-    ...(people
+    ...named.map(p => ({
+      key: `p-${p.personId}`,
+      kind: 'person' as const,
+      label: 'Person',
+      title: p.name,
+      sub: 'Recognized from the photos you named',
+      acc: p.score * 100,
+      at: 'now',
+    })),
+    ...(strangers
       ? [{
           key: 'person',
           kind: 'person' as const,
           label: 'Person',
-          title: `${people.count} ${people.count === 1 ? 'person' : 'people'} in view`,
-          sub: 'Detected, not identified',
-          acc: people.confidence * 100,
+          title: `${strangers.count} ${named.length ? 'more ' : ''}${strangers.count === 1 ? 'person' : 'people'} in view`,
+          sub: onLabelPerson ? 'Not named yet · double-click one on the feed' : 'Detected, not identified',
+          acc: strangers.confidence * 100,
           at: 'now',
         }]
       : []),
@@ -115,8 +136,9 @@ export function LiveFeed({ camera, missing, now, onSelect }: Props) {
     })),
   ].slice(0, 6);
 
-  const alt = inView.length
-    ? `Live camera. Yours in view: ${inView.map(i => i.name).join(', ')}`
+  const seen = [...inView.map(i => i.name), ...named.map(p => p.name)];
+  const alt = seen.length
+    ? `Live camera. In view: ${seen.join(', ')}`
     : 'Live camera from the RecallAI vision loop';
   const tracked = camera?.detections.length ?? 0;
 
@@ -174,12 +196,23 @@ export function LiveFeed({ camera, missing, now, onSelect }: Props) {
               );
             })}
           {online && (
+            <PersonBoxes
+              named={named}
+              unnamed={unnamed}
+              width={w}
+              height={h}
+              people={people}
+              onRename={onRenamePerson}
+              onLabel={onLabelPerson}
+            />
+          )}
+          {online && (
             <>
               <span className="scene-chip scene-chip-left mono">
                 Python camera{camera!.gps ? ' · GPS on' : ''}
               </span>
               <span className="scene-chip scene-chip-right mono">
-                {tracked} tracked{people ? ` · ${people.count} ${people.count === 1 ? 'person' : 'people'}` : ''}
+                {tracked} tracked{peopleCount ? ` · ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}` : ''}
               </span>
             </>
           )}

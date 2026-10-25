@@ -123,6 +123,8 @@ export const demoLive = {
     { belonging_id: 'a1f3c9e2b7d4', name: 'My Laptop', category: 'laptop', score: 0.912, bbox: [135, 292, 300, 358] },
     { belonging_id: '3617519a583a', name: 'My Bag', category: 'backpack', score: 0.861, bbox: [0, 352, 290, 480] },
   ],
+  // Chawin was named on the feed before; the other two people aren't yet.
+  people: [{ person_id: 1, name: 'Chawin', score: 0.83, bbox: [186, 222, 300, 305] }],
   detections: [
     { category: 'laptop', confidence: 0.88, bbox: [135, 292, 300, 358] },
     { category: 'backpack', confidence: 0.81, bbox: [0, 352, 290, 480] },

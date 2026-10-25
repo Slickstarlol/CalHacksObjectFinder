@@ -3,6 +3,8 @@
  * (webcam.py -> live_feed.LivePublisher -> POST /api/live).
  *
  * `in_view` = your recognized belongings (DINOv2 match score 0..1),
+ * `people` = your people the camera recognizes (named by double-clicking a
+ * person box, POST /api/live/people),
  * `detections` = every YOLO box (anonymous categories, confidence 0..1).
  * Boxes are [x1, y1, x2, y2] in pixels of the published preview frame.
  */
@@ -14,6 +16,15 @@ export type LiveItem = {
   name: string;
   category: string;
   /** DINOv2 similarity to your reference photos, 0..1. */
+  score: number;
+  bbox: Box | null;
+};
+
+export type LivePerson = {
+  /** SQLite people.id (the person table's id as a number). */
+  personId: number;
+  name: string;
+  /** Similarity to the photos saved when they were named, 0..1. */
   score: number;
   bbox: Box | null;
 };
@@ -31,6 +42,7 @@ export type LiveSnapshot = {
   height: number | null;
   gps: boolean;
   inView: LiveItem[];
+  people: LivePerson[];
   detections: LiveDetection[];
 };
 
@@ -49,6 +61,7 @@ export const EMPTY_SNAPSHOT: LiveSnapshot = {
   height: null,
   gps: false,
   inView: [],
+  people: [],
   detections: [],
 };
 
@@ -89,6 +102,14 @@ export function parseLive(body: unknown): LiveSnapshot {
       score: num(i.score) ?? 0,
       bbox: box(i.bbox),
     })),
+    people: list(b.people)
+      .map(p => ({
+        personId: num(p.person_id) ?? NaN,
+        name: str(p.name) || 'Person',
+        score: num(p.score) ?? 0,
+        bbox: box(p.bbox),
+      }))
+      .filter(p => Number.isInteger(p.personId)),
     detections: list(b.detections).map(d => ({
       category: str(d.category) || 'object',
       confidence: num(d.confidence) ?? 0,
@@ -118,7 +139,7 @@ export function boxPercent(
   };
 }
 
-function iou(a: Box, b: Box): number {
+export function iou(a: Box, b: Box): number {
   const ix = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
   const iy = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
   const inter = ix * iy;
@@ -129,16 +150,23 @@ function iou(a: Box, b: Box): number {
 
 export type DetectionGroup = { category: string; count: number; confidence: number };
 
+/** Two boxes this similar are the same thing seen twice (YOLO box + recognized box). */
+const SAME_BOX = 0.5;
+
 /**
- * YOLO detections that aren't one of your recognized belongings, grouped by
- * category (highest confidence first). A detection overlapping an in-view
- * belonging's box is the same object, so it's left out.
+ * YOLO detections that aren't one of your recognized belongings or people,
+ * grouped by category (highest confidence first). A detection overlapping a
+ * recognized box is the same thing, so it's left out.
  */
-export function otherDetections(detections: readonly LiveDetection[], inView: readonly LiveItem[]): DetectionGroup[] {
-  const mine = inView.map(i => i.bbox).filter((b): b is Box => b !== null);
+export function otherDetections(
+  detections: readonly LiveDetection[],
+  inView: readonly LiveItem[],
+  people: readonly LivePerson[] = []
+): DetectionGroup[] {
+  const mine = [...inView, ...people].map(i => i.bbox).filter((b): b is Box => b !== null);
   const groups = new Map<string, DetectionGroup>();
   for (const d of detections) {
-    if (d.bbox && mine.some(m => iou(m, d.bbox!) > 0.5)) continue;
+    if (d.bbox && mine.some(m => iou(m, d.bbox!) > SAME_BOX)) continue;
     const g = groups.get(d.category);
     if (g) {
       g.count += 1;
@@ -148,6 +176,14 @@ export function otherDetections(detections: readonly LiveDetection[], inView: re
     }
   }
   return [...groups.values()].sort((a, b) => b.confidence - a.confidence);
+}
+
+/** Person boxes the camera hasn't put a name on (yours, at least). */
+export function unnamedPeople(detections: readonly LiveDetection[], people: readonly LivePerson[]): LiveDetection[] {
+  const named = people.map(p => p.bbox).filter((b): b is Box => b !== null);
+  return detections.filter(
+    d => d.category === 'person' && d.bbox && !named.some(n => iou(n, d.bbox!) > SAME_BOX)
+  );
 }
 
 /** Mean match score (0..100) of your belongings in view, or null if none are. */

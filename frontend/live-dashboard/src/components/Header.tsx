@@ -1,4 +1,5 @@
 import { Logo } from './Icons';
+import { ThemeToggle } from './ThemeToggle';
 import type { ConnectionStatus } from './types';
 
 const LABEL: Record<ConnectionStatus, string> = {
@@ -48,6 +49,7 @@ export function Header({ status, belongings, sightings, alerts, updated, account
             </span>
           )}
         </div>
+        <ThemeToggle />
         {account && (
           <div className="account">
             <span className="account-name" title={`Signed in as ${account.username}`}>

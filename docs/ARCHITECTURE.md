@@ -4,6 +4,7 @@
  webcam ──▶ recallai.vision.webcam ──────────────────────────────┐
             YOLO (models/yolo26n.pt)                              │ annotated frame
             → recognition: "is it mine?" (DINOv2 vs data/belongings/)   (live_feed → POST /api/live)
+            → people_id: "who is it?" (DINOv2 vs data/people/)    │
             → recorder: seen / left_view                          │
                  │                                                ▼
                  ▼ writes                                 recallai.api.server (FastAPI :8000)

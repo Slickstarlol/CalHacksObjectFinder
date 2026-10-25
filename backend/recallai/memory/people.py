@@ -11,14 +11,20 @@ from that date so it stays current.
 
 People are private per account: every route needs a signed-in user and
 only sees and changes rows with that user's owner_id (others' ids -> 404).
+
+People can also be named on the live feed (POST /api/live/people in
+server.py): the camera keeps their photos in data/people/<id>/, which are
+deleted with the person.
 """
 
+import shutil
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from recallai import owners
+from recallai import owners, paths
 from recallai.api.auth import current_user
 from recallai.memory import db as dbmod
 
@@ -108,6 +114,45 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def get_person(person_id, owner_id, db_path=None):
+    """One of the owner's people, or None."""
+    dbmod.init_db(db_path)
+    with dbmod.connect(db_path) as db:
+        row = db.execute("SELECT * FROM people WHERE id=? AND owner_id=?",
+                         (person_id, owner_id)).fetchone()
+    return _row(row) if row else None
+
+
+def find_or_create(name, owner_id, db_path=None):
+    """The owner's person called `name` (any case), else a new one.
+    Returns (person, created)."""
+    name = name.strip()
+    dbmod.init_db(db_path)
+    with dbmod.connect(db_path) as db:
+        row = db.execute(
+            "SELECT * FROM people WHERE owner_id=? AND name=? COLLATE NOCASE "
+            "ORDER BY id LIMIT 1", (owner_id, name)).fetchone()
+        if row:
+            return _row(row), False
+        now = _now()
+        cur = db.execute(
+            "INSERT INTO people (name, description, relationship, known_since, "
+            "created_at, updated_at, owner_id) VALUES (?,?,?,?,?,?,?)",
+            (name, "", "", None, now, now, owner_id))
+        db.commit()
+        row = db.execute("SELECT * FROM people WHERE id=?", (cur.lastrowid,)).fetchone()
+    return _row(row), True
+
+
+def names_by_id(owner_id, db_path=None):
+    """{person id: name} for the owner's people."""
+    dbmod.init_db(db_path)
+    with dbmod.connect(db_path) as db:
+        rows = db.execute("SELECT id, name FROM people WHERE owner_id=?",
+                          (owner_id,)).fetchall()
+    return {int(r["id"]): r["name"] for r in rows}
+
+
 @router.get("/api/people")
 def get_people(user=Depends(current_user)):
     return list_people(owner_id=user["id"])
@@ -158,4 +203,5 @@ def delete_person(person_id: int, user=Depends(current_user)):
         db.commit()
     if cur.rowcount == 0:
         raise HTTPException(404, "No such person")
+    shutil.rmtree(Path(paths.PEOPLE_DIR) / str(person_id), ignore_errors=True)
     return {"status": "deleted"}

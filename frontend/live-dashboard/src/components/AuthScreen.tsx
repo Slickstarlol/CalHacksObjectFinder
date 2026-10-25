@@ -8,6 +8,7 @@ import {
   type RegisterForm,
 } from '../lib/auth';
 import { Logo } from './Icons';
+import { ThemeToggle } from './ThemeToggle';
 
 type Mode = 'signin' | 'register';
 
@@ -89,6 +90,7 @@ export function AuthScreen({ onSignIn, onSignUp, notice, checking, initialMode =
 
   return (
     <div className="auth-page">
+      <ThemeToggle className="auth-theme" />
       <main className="auth-card" aria-labelledby={`${id}-title`}>
         <div className="brand auth-brand">
           <Logo size={32} />

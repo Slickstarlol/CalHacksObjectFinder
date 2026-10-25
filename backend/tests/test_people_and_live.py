@@ -186,3 +186,113 @@ def test_publisher_posts_scaled_jpeg(monkeypatch):
     assert body["in_view"][0]["bbox"][2] == 960
     jpeg = base64.b64decode(body["frame_jpeg_b64"])
     assert jpeg.startswith(b"\xff\xd8")
+
+
+PERSON_BOX = [104, 44, 204, 234]
+
+
+def _push(camera, **extra):
+    """One camera frame with a person and a chair in it; returns the reply."""
+    return camera.post("/api/live", json={
+        "frame_jpeg_b64": _jpeg_b64(), "width": 480, "height": 270,
+        "detections": [
+            {"category": "person", "confidence": 0.9, "bbox": PERSON_BOX},
+            {"category": "chair", "confidence": 0.7, "bbox": [300, 100, 400, 260]},
+        ],
+        **extra,
+    }).json()
+
+
+def test_name_a_person_on_the_live_feed(client):
+    from recallai.api import server
+    camera = TestClient(server.app, client=("127.0.0.1", 50000))
+    click = {"bbox": [100, 40, 200, 230]}       # a beat behind the camera's box
+    off = client.post("/api/live/people", json={**click, "name": "Maya"})
+    assert off.status_code == 409 and off.json()["detail"] == "The camera is off."
+
+    _push(camera)
+    chair = client.post("/api/live/people", json={"bbox": [300, 100, 400, 260], "name": "Maya"})
+    assert chair.status_code == 409 and "isn't in view" in chair.json()["detail"]
+    assert client.post("/api/live/people", json={**click, "name": "  "}).status_code == 422
+    assert client.get("/api/people").json() == []
+
+    named = client.post("/api/live/people", json={**click, "name": " Maya "})
+    assert named.status_code == 200
+    body = named.json()
+    assert body["created"] is True and body["person"]["name"] == "Maya"
+    assert body["bbox"] == PERSON_BOX
+    pid = body["person"]["id"]
+    assert [p["name"] for p in client.get("/api/people").json()] == ["Maya"]
+
+    again = client.post("/api/live/people", json={**click, "name": "maya"}).json()
+    assert again["created"] is False and again["person"]["id"] == pid
+    by_id = client.post("/api/live/people", json={**click, "person_id": pid}).json()
+    assert by_id["person"]["id"] == pid
+
+    # The camera gets each job once, with its next frame.
+    job = {"person_id": pid, "bbox": PERSON_BOX, "width": 480}
+    assert _push(camera)["people_jobs"] == [job] * 3
+    assert _push(camera)["people_jobs"] == []
+
+    # The camera recognizes Maya; a rename shows without waiting for it.
+    _push(camera, people=[
+        {"person_id": pid, "name": "Maya", "score": 0.83, "bbox": PERSON_BOX},
+        {"person_id": pid + 100, "name": "Not yours", "score": 0.9, "bbox": [0, 0, 9, 9]},
+    ])
+    client.put(f"/api/people/{pid}", json={"name": "Maya Chen"})
+    assert client.get("/api/live").json()["people"] == [
+        {"person_id": pid, "name": "Maya Chen", "score": 0.83, "bbox": PERSON_BOX}]
+
+
+def test_live_people_stay_in_their_account(client, tmp_path):
+    from recallai import paths
+    from recallai.api import server
+    camera = TestClient(server.app, client=("127.0.0.1", 50000))
+    other = TestClient(server.app)
+    sign_in(other, "lois")
+    _push(camera)
+    mom = client.post("/api/live/people", json={"bbox": PERSON_BOX, "name": "Mom"}).json()["person"]
+
+    stolen = other.post("/api/live/people", json={"bbox": PERSON_BOX, "person_id": mom["id"]})
+    assert stolen.status_code == 404
+    # Same name in another account is another person.
+    theirs = other.post("/api/live/people", json={"bbox": PERSON_BOX, "name": "Mom"}).json()
+    assert theirs["created"] is True and theirs["person"]["id"] != mom["id"]
+
+    _push(camera, people=[{"person_id": mom["id"], "name": "Mom", "score": 0.8, "bbox": PERSON_BOX}])
+    assert [p["person_id"] for p in client.get("/api/live").json()["people"]] == [mom["id"]]
+    assert other.get("/api/live").json()["people"] == []
+
+    # Deleting a person deletes the camera's photos of them.
+    folder = paths.PEOPLE_DIR / str(mom["id"])
+    folder.mkdir(parents=True)
+    (folder / "reference_1.jpg").write_bytes(b"x")
+    assert client.delete(f"/api/people/{mom['id']}").status_code == 200
+    assert not folder.exists()
+
+
+def test_publisher_hands_over_people_jobs(monkeypatch):
+    from recallai.vision import live_feed
+    sent = []
+    job = {"person_id": 4, "bbox": [1, 2, 30, 40], "width": 960}
+
+    def fake_post(url, json=None, timeout=None):
+        sent.append(json)
+        return type("R", (), {"json": lambda self: {"enroll": {}, "people_jobs": [job]}})()
+
+    monkeypatch.setattr(live_feed.requests, "post", fake_post)
+    pub = live_feed.LivePublisher("http://example.test/api/live", interval=0.02)
+    try:
+        pub.submit(np.zeros((1000, 2000, 3), np.uint8), {
+            "people": [{"person_id": 4, "name": "Maya", "score": 0.8, "bbox": [0, 0, 2000, 1000]}],
+        })
+        for _ in range(50):
+            if sent:
+                break
+            time.sleep(0.02)
+        time.sleep(0.05)
+    finally:
+        pub.close()
+    assert sent[0]["people"][0]["bbox"] == [0, 0, 960, 480]
+    assert pub.take_people_jobs() == [job]
+    assert pub.take_people_jobs() == []

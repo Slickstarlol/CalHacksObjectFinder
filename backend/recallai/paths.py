@@ -4,6 +4,7 @@ Layout (relative to the repository root):
     data/memory.db          SQLite (git-ignored)
     data/snapshots/         camera frames + crops (git-ignored)
     data/belongings/        your registered items and reference photos
+    data/people/<id>/       reference photos of people you named on the live feed
     models/yolo26n.pt       YOLO weights
     .env, .spacetime_token  secrets, stay at the repository root
 
@@ -11,6 +12,7 @@ The sightings table stores image paths relative to DATA_DIR
 ("snapshots/123.jpg", "snapshots/crops/123.jpg"), so SNAPSHOT_DIR is always
 DATA_DIR/snapshots. Override with environment variables:
     RECALLAI_ROOT, RECALLAI_DATA_DIR, RECALLAI_DB_PATH, RECALLAI_BELONGINGS_DIR,
+    RECALLAI_PEOPLE_DIR,
     RECALLAI_MODELS_DIR, RECALLAI_YOLO_PATH, RECALLAI_STATIC_DIR,
     RECALLAI_WEB_DIST, RECALLAI_ENV_FILE, RECALLAI_SPACETIME_TOKEN
 """
@@ -35,6 +37,7 @@ DATA_DIR = _env_path("RECALLAI_DATA_DIR", ROOT / "data")
 DB_PATH = _env_path("RECALLAI_DB_PATH", DATA_DIR / "memory.db")
 SNAPSHOT_DIR = DATA_DIR / "snapshots"      # must match the stored "snapshots/..." paths
 BELONGINGS_DIR = _env_path("RECALLAI_BELONGINGS_DIR", DATA_DIR / "belongings")
+PEOPLE_DIR = _env_path("RECALLAI_PEOPLE_DIR", DATA_DIR / "people")
 
 MODELS_DIR = _env_path("RECALLAI_MODELS_DIR", ROOT / "models")
 YOLO_PATH = _env_path("RECALLAI_YOLO_PATH", MODELS_DIR / "yolo26n.pt")

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Person } from '../module_bindings/types';
 import { knownFor, sortPeople } from '../lib/people';
+import { NameInput } from './NameInput';
 
 type Props = {
   people: readonly Person[];
@@ -12,59 +13,19 @@ type Props = {
 const TONES = ['tone-sky', 'tone-sand', 'tone-mint'];
 
 /** A person's name: double-click (or Enter / F2) to rename it in place. */
-function PersonName({
-  person,
-  shown,
-  onSave,
-}: {
-  person: Person;
-  shown: string;
-  onSave?: (name: string) => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const done = useRef(false);
-  const editing = draft !== null;
-
-  useEffect(() => {
-    if (!editing) return;
-    input.current?.focus();
-    input.current?.select();
-  }, [editing]);
+function PersonName({ shown, onSave }: { shown: string; onSave?: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
 
   if (!onSave) return <span className="person-name">{shown}</span>;
-
-  const start = () => {
-    done.current = false;
-    setDraft(shown);
-  };
-  const finish = (save: boolean) => {
-    if (done.current || draft === null) return;
-    done.current = true;
-    const name = draft.trim();
-    setDraft(null);
-    if (save && name && name !== shown) onSave(name);
-  };
-
-  if (draft !== null) {
+  if (editing) {
     return (
-      <input
-        ref={input}
-        className="name-input"
-        value={draft}
-        maxLength={80}
-        aria-label={`New name for ${shown}`}
-        onChange={e => setDraft(e.target.value)}
-        onKeyDown={(e: KeyboardEvent) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            finish(true);
-          } else if (e.key === 'Escape') {
-            e.stopPropagation(); // don't also close a drawer
-            finish(false);
-          }
+      <NameInput
+        initial={shown}
+        label={`New name for ${shown}`}
+        onDone={name => {
+          setEditing(false);
+          if (name && name !== shown) onSave(name);
         }}
-        onBlur={() => finish(true)}
       />
     );
   }
@@ -74,11 +35,11 @@ function PersonName({
       className="person-name name-btn"
       title="Double-click to rename"
       aria-label={`${shown}, press Enter to rename`}
-      onDoubleClick={start}
+      onDoubleClick={() => setEditing(true)}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === 'F2') {
           e.preventDefault();
-          start();
+          setEditing(true);
         }
       }}
     >
@@ -144,7 +105,7 @@ export function PeoplePanel({ people, now, onRename }: Props) {
                 </span>
                 <div className="person-body">
                   <div className="person-head">
-                    <PersonName person={p} shown={shown} onSave={onRename ? save(p) : undefined} />
+                    <PersonName shown={shown} onSave={onRename ? save(p) : undefined} />
                     {p.relationship && <span className="chip">{p.relationship}</span>}
                   </div>
                   {known && <span className="muted small">Known for {known}</span>}

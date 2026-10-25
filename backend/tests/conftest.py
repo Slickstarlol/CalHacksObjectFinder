@@ -58,11 +58,14 @@ def _isolate_accounts(tmp_path, monkeypatch):
     from recallai import paths
     from recallai.api import auth, search
     monkeypatch.setattr(search, "BELONGINGS_DIR", tmp_path / "belongings")
+    # Photos of people named on the live feed: never the real data/people.
+    monkeypatch.setattr(paths, "PEOPLE_DIR", tmp_path / "people")
     auth.throttle.reset()
     server = sys.modules.get("recallai.api.server")
     if server is not None:
         server.reset_gps()
         server.reset_enroll()
+        server.take_people_jobs()
     real = {p: p.read_bytes() for p in Path(paths.BELONGINGS_DIR).glob("*/info.json")}
     yield
     auth.throttle.reset()

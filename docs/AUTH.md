@@ -77,7 +77,7 @@ SpacetimeDB tables get an `owner` column (see
 | `POST /api/auth/login` `{username, password}` | none | 200 `{token, ...}`; 401 `"Incorrect username or password."` for a wrong password **and** an unknown user; 429 + `Retry-After` after 5 failures for that username within 5 minutes (60 s lockout) |
 | `POST /api/auth/logout` | Bearer | revokes this token |
 | `GET /api/auth/me` | Bearer | `{id, username, display_name, created_at, session_expires}` |
-| `/api/belongings*`, `/api/sightings*`, `/api/objects`, `/api/people*`, `/api/ask`, `/api/alerts*`, `/api/enroll*`, `GET /api/live`, `POST /gps`, `GET /gps/latest` | Bearer | only the caller's data; someone else's ids behave like missing ones (404) |
+| `/api/belongings*`, `/api/sightings*`, `/api/objects`, `/api/people*`, `/api/ask`, `/api/alerts*`, `/api/enroll*`, `GET /api/live`, `POST /api/live/people`, `POST /gps`, `GET /gps/latest` | Bearer | only the caller's data; someone else's ids behave like missing ones (404) |
 | `GET /snapshots/<file>`, `GET /api/live/frame.jpg`, `GET /api/live/stream` | Bearer **or** `?token=` | for `<img>` tags; a snapshot is only served to the owner of a sighting that references it |
 | `POST /api/live`, `GET /api/device/gps` | device | the camera process (below) |
 | `/`, `/search`, `/auth.js`, `/app/` | none | pages; they sign in before calling the API |
@@ -144,6 +144,15 @@ can't start or cancel that session (409).
 boxes drawn for other users' items); any signed-in user may view it. In
 `GET /api/live` the `in_view` list (recognized belongings, by name) only
 contains the caller's items; `detections` are anonymous YOLO categories.
+
+**Naming people on the live feed**: `POST /api/live/people` `{bbox, name}` (or
+`{bbox, person_id}`) names the person in that box for the caller's account,
+creating the person if the name is new. The server queues the box for the
+camera (returned as `people_jobs` from `POST /api/live`); the camera saves a
+crop to `data/people/<person id>/` (git-ignored, deleted with the person) and
+then reports recognized people as `people` in its frames. `GET /api/live`
+lists only the caller's people, with their current name. Names are never
+drawn on the shared frame, so other accounts don't see them.
 
 ## SpacetimeDB (live dashboard)
 

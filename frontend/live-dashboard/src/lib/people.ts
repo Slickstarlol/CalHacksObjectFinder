@@ -1,5 +1,6 @@
 /** People helpers (mirror people.py so both dashboards say the same thing). */
 import type { Person } from '../module_bindings/types';
+import type { Box } from './live';
 
 function n(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -87,15 +88,62 @@ export async function renamePerson(
     throw new RenameError("Can't reach the RecallAI server to save the name.");
   }
   if (res?.ok) return;
-  let detail = '';
-  try {
-    const body = (await res?.json()) as { detail?: unknown } | undefined;
-    if (typeof body?.detail === 'string') detail = body.detail;
-  } catch {
-    /* non-JSON error body */
-  }
+  const detail = await errorDetail(res);
   throw new RenameError(
     res?.status === 404 ? 'That person no longer exists.' : `Couldn’t save the name${detail ? `: ${detail}` : '.'}`,
     res?.status
   );
+}
+
+async function errorDetail(res: Response | undefined): Promise<string> {
+  try {
+    const body = (await res?.json()) as { detail?: unknown } | undefined;
+    return typeof body?.detail === 'string' ? body.detail : '';
+  } catch {
+    return ''; // non-JSON error body
+  }
+}
+
+export type LabelResult = { personId: number; name: string; created: boolean; bbox: Box | null };
+
+/**
+ * Name the person in a live-feed box (POST /api/live/people). `personId`
+ * says "this is that person"; otherwise `name` finds your person with that
+ * name or creates them. The camera then saves a photo of them and puts the
+ * name on their box from the next frames.
+ */
+export async function labelPerson(
+  target: { bbox: Box; name?: string; personId?: number },
+  apiBase = '',
+  fetchImpl: typeof fetch = fetch
+): Promise<LabelResult> {
+  let res: Response | undefined;
+  try {
+    res = await fetchImpl(`${apiBase.replace(/\/+$/, '')}/api/live/people`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        target.personId !== undefined
+          ? { bbox: target.bbox, person_id: target.personId }
+          : { bbox: target.bbox, name: (target.name ?? '').trim() }
+      ),
+    });
+  } catch {
+    throw new RenameError("Can't reach the RecallAI server to save the name.");
+  }
+  if (!res?.ok) {
+    const detail = await errorDetail(res);
+    throw new RenameError(
+      res?.status === 404 ? 'That person no longer exists.' : detail || 'Couldn’t save the name.',
+      res?.status
+    );
+  }
+  const body = (await res.json()) as { person?: { id?: unknown; name?: unknown }; created?: unknown; bbox?: unknown };
+  const box = Array.isArray(body.bbox) && body.bbox.length === 4 ? (body.bbox.map(Number) as Box) : null;
+  return {
+    personId: Number(body.person?.id),
+    name: typeof body.person?.name === 'string' ? body.person.name : (target.name ?? '').trim(),
+    created: body.created === true,
+    bbox: box && box.every(Number.isFinite) ? box : null,
+  };
 }
