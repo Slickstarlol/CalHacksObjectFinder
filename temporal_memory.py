@@ -404,7 +404,7 @@ def get_items_not_seen_since(threshold, db_path=None, now=None,
     """
     now = _now(now)
     secs = threshold.total_seconds() if isinstance(threshold, timedelta) else float(threshold)
-    belongings = load_belongings(belongings_dir)
+    belongings = [b for b in load_belongings(belongings_dir) if b.tracking]
     with dbmod.connect(db_path) as db:
         latest = {r["belonging_id"]: r for r in db.execute(
             f"""SELECT * FROM (

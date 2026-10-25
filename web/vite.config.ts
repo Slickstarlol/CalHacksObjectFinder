@@ -12,7 +12,9 @@ export default defineConfig(({ command, isPreview }) => ({
   // public/ only holds demo fixture images (for demo.html); keep them out of the prod bundle.
   publicDir: command === 'build' ? false : 'public',
   server: {
-    host: true, // reachable from a phone on the same Wi-Fi: http://<laptop-ip>:5173
+    // :5173 belongs to RecallAIFrontEnd/ (the JSX dashboard); this one uses :5174.
+    port: 5174,
+    host: true, // reachable from a phone on the same Wi-Fi: http://<laptop-ip>:5174
     proxy: {
       '/api': { target: FASTAPI, changeOrigin: true },
       '/snapshots': { target: FASTAPI, changeOrigin: true },

@@ -213,7 +213,7 @@ def test_agent_runs_function_calls_then_answers_with_citations(world):
     assert first["input"][0] == {"role": "system", "content": agentmod.SYSTEM}
     assert {t["name"] for t in first["tools"]} == {
         "list_belongings", "search_sightings", "get_last_seen", "look_at_photo",
-        "get_context"}
+        "get_context", "list_people"}
     # results go back as function_call_output, chained to the previous response
     out1 = second["input"][0]
     assert out1["type"] == "function_call_output" and out1["call_id"] == "a"

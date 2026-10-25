@@ -64,6 +64,20 @@ CREATE TABLE IF NOT EXISTS alerts (
 )
 """
 
+# People the user wants RecallAI to remember. known_since is a YYYY-MM-DD
+# date; "how long you've known them" is computed from it when reading.
+PEOPLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    relationship TEXT NOT NULL DEFAULT '',
+    known_since TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
 
 def connect(path=None):
     db = sqlite3.connect(str(path or DB_PATH), timeout=10)
@@ -80,6 +94,7 @@ def init_db(path=None):
     with connect(path) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute(ALERTS_SCHEMA)
+        db.execute(PEOPLE_SCHEMA)
         cols = _columns(db)
 
         if not cols:

@@ -23,6 +23,7 @@ import db as dbmod
 import temporal_memory as tm
 from llm import (AGENT_MODEL, VISION_MODEL, function_calls, function_tool,
                  get_client, image_part, output_text, text_part)
+from people import list_people
 from recognition import BELONGINGS_DIR, load_belongings
 
 MAX_TURNS = 8
@@ -34,8 +35,11 @@ A camera records "sightings" of the user's registered belongings. Each sighting 
 where it was put down), a description of where it was (written by a vision model from the photo), a place
 label, nearby objects, a recognition match score, and sometimes phone GPS.
 
+The user can also save people (name, a short description, their relationship to the user, and how long
+they have known them). That list is separate from belongings. Use list_people for questions about a person.
+
 How to answer:
-- Always look up the data with tools before answering; never invent sightings.
+- Always look up the data with tools before answering; never invent sightings or people.
 - The most recent 'left_view' sighting is usually the best clue to where an item is now.
 - When useful, look at the photo of the key sighting (look_at_photo) to describe the spot precisely.
 - Give: where to look first, why (cite evidence and times), and 1-2 backup places if the evidence is weak
@@ -129,6 +133,12 @@ TOOLS = [
     function_tool(
         "get_context",
         "Current local time and the user's live phone GPS (if connected).",
+        {"type": "object", "properties": {}},
+    ),
+    function_tool(
+        "list_people",
+        "List people the user has saved: name, description, relationship "
+        "to the user, and how long they have known them.",
         {"type": "object", "properties": {}},
     ),
 ]
@@ -227,6 +237,8 @@ class MemoryTools:
         out = []
         with dbmod.connect(self.db_path) as db:
             for b in load_belongings(self.belongings_dir):
+                if not b.tracking:
+                    continue
                 row = db.execute(
                     f"SELECT * FROM sightings WHERE belonging_id=? AND {VISIBLE} "
                     "ORDER BY timestamp DESC, id DESC LIMIT 1", (b.id,)).fetchone()
@@ -246,7 +258,7 @@ class MemoryTools:
         return json.dumps(out, indent=1)
 
     def _resolve(self, db, belonging):
-        items = load_belongings(self.belongings_dir)
+        items = [b for b in load_belongings(self.belongings_dir) if b.tracking]
         q = belonging.strip().lower()
         ids = [b.id for b in items if b.id == q]
         if not ids:
@@ -353,6 +365,19 @@ class MemoryTools:
             + f"Answer briefly and concretely: {question}"))
         when = local(row["timestamp"], self._now(), self.tz)
         return f"Sighting #{row['id']} ({when}): " + self.vision(content)
+
+    def tool_list_people(self):
+        rows = list_people(self.db_path)
+        if not rows:
+            return "No people saved yet."
+        brief = [{
+            "name": p["name"],
+            "description": p["description"] or None,
+            "relationship": p["relationship"] or None,
+            "known_since": p["known_since"],
+            "known_for": p["known_for"],
+        } for p in rows]
+        return json.dumps(brief, indent=1)
 
     def tool_get_context(self):
         gps = self.gps_provider()

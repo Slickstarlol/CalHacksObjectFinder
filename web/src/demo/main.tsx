@@ -1,5 +1,5 @@
 /**
- * Dev-only demo (http://localhost:5173/demo.html): renders the presentational
+ * Dev-only demo (http://localhost:5174/demo.html): renders the presentational
  * Dashboard with fixture data, no SpacetimeDB or FastAPI needed.
  * Query params: ?theme=dark|light  ?drawer=<belongingId>  ?simulate=1  ?empty=1
  */

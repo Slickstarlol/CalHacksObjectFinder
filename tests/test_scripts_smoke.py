@@ -72,6 +72,18 @@ def test_webcam_main_records_my_bottle(tmp_path, monkeypatch):
     monkeypatch.setattr(webcam.cv2, "imshow", lambda *a: None)
     monkeypatch.setattr(webcam.cv2, "destroyAllWindows", lambda *a: None)
     monkeypatch.setattr(webcam.cv2, "waitKey", lambda *a: 0)
+
+    class _SilentPublisher:
+        def __init__(self, *a, **k):
+            pass
+
+        def submit(self, *a, **k):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(webcam, "LivePublisher", _SilentPublisher)
     monkeypatch.setattr(sys, "argv", ["webcam.py"])
 
     webcam.main()
