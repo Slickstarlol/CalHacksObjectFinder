@@ -37,6 +37,7 @@ function Demo() {
   const start = useMemo(() => Date.now(), []);
   const [sightings, setSightings] = useState<Sighting[]>(() => makeSightings(start));
   const [alerts, setAlerts] = useState(() => makeAlerts(start));
+  const [people, setPeople] = useState(() => makePeople(start));
   const [activity, setActivity] = useState<ActivityItem[]>(() => makeActivity(start, sightings));
   const [entries, setEntries] = useState<AskEntry[]>(askEntries);
   const now = useNow(30_000);
@@ -68,7 +69,12 @@ function Demo() {
       status={empty ? 'connecting' : 'live'}
       live
       belongings={empty ? [] : [...belongings, enrollingBelonging]}
-      people={empty ? [] : makePeople(start)}
+      people={empty ? [] : people}
+      onRenamePerson={async (person, name) => {
+        // Stand-in for PUT /api/people/{id} + the bridge echoing the row back.
+        await new Promise(r => setTimeout(r, 600));
+        setPeople(prev => prev.map(p => (p.id === person.id ? { ...p, name } : p)));
+      }}
       sightings={empty ? [] : sightings}
       alerts={empty ? [] : alerts}
       activity={empty ? [] : activity}

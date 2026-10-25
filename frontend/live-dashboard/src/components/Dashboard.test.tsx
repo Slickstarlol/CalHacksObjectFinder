@@ -308,6 +308,43 @@ describe('Dashboard', () => {
       expect(within(rows[1]).queryByText(/Known for/)).not.toBeInTheDocument();
     });
 
+    it('renames a person on double-click and shows the new name right away', async () => {
+      let resolve!: () => void;
+      const onRenamePerson = vi.fn(() => new Promise<void>(r => (resolve = r)));
+      const { rerender, props } = setup({ people: makePeople(NOW), onRenamePerson });
+      const panel = screen.getByRole('region', { name: 'People' });
+      await userEvent.dblClick(within(panel).getByRole('button', { name: /^Chawin, press Enter to rename/ }));
+      const input = within(panel).getByRole('textbox', { name: 'New name for Chawin' });
+      await userEvent.clear(input);
+      await userEvent.type(input, 'Chawin M.{Enter}');
+      expect(onRenamePerson).toHaveBeenCalledWith(expect.objectContaining({ id: 1n }), 'Chawin M.');
+      expect(within(panel).getByText('Chawin M.')).toBeInTheDocument(); // before SpacetimeDB echoes it
+      await act(async () => resolve());
+      // the bridge mirrors the row back; the pending name gives way to the real one
+      rerender(<Dashboard {...props} people={makePeople(NOW).map(p => (p.id === 1n ? { ...p, name: 'Chawin M.' } : p))} />);
+      expect(within(panel).getByText('Chawin M.')).toBeInTheDocument();
+    });
+
+    it('Escape cancels, an unchanged name saves nothing, and a failed save reverts', async () => {
+      const onRenamePerson = vi.fn().mockRejectedValue(new Error('Couldn’t save the name: Name is required'));
+      setup({ people: makePeople(NOW), onRenamePerson });
+      const panel = screen.getByRole('region', { name: 'People' });
+      const mom = () => within(panel).getByRole('button', { name: /^Mom, press Enter to rename/ });
+
+      await userEvent.dblClick(mom());
+      await userEvent.type(within(panel).getByRole('textbox'), ' and Dad{Escape}');
+      await userEvent.dblClick(mom());
+      await userEvent.type(within(panel).getByRole('textbox'), '{Enter}');
+      expect(onRenamePerson).not.toHaveBeenCalled();
+
+      mom().focus();
+      await userEvent.keyboard('{Enter}');
+      await userEvent.type(within(panel).getByRole('textbox'), '!{Enter}');
+      expect(onRenamePerson).toHaveBeenCalledWith(expect.objectContaining({ id: 2n }), 'Mom!');
+      expect(await within(panel).findByRole('alert')).toHaveTextContent('Name is required');
+      expect(mom()).toHaveTextContent(/^Mom$/);
+    });
+
     it('shows an empty state', () => {
       setup({ people: [] });
       expect(screen.getByText('No people saved yet.')).toBeInTheDocument();

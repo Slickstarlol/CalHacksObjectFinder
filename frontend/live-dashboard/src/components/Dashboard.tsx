@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCursorLens } from '../hooks/useCursorLens';
 import type { Alert, Belonging, Person, Sighting } from '../module_bindings/types';
 import type { ActivityItem } from '../lib/activity';
 import type { CameraState } from '../lib/live';
@@ -47,6 +48,8 @@ export type DashboardProps = {
   camera?: CameraState;
   /** Minutes out of view before a card shows the left-behind timer. */
   leftAfter?: number;
+  /** Saves a person's new name (double-click a name in People). Omitted -> read-only. */
+  onRenamePerson?: (person: Person, name: string) => Promise<void>;
   initialSelectedId?: string | null;
   /** The signed-in account shown in the top bar, with its sign-out action. */
   account?: { name: string; username: string; onSignOut: () => void };
@@ -123,9 +126,11 @@ export function Dashboard(props: DashboardProps) {
   }, [lightbox]);
 
   const openImage = (src: string, caption?: string) => setLightbox({ src, caption });
+  const appRef = useRef<HTMLDivElement>(null);
+  useCursorLens(appRef);
 
   return (
-    <div className="app">
+    <div className="app gridbg" ref={appRef}>
       <Header
         status={status}
         belongings={belongings.length}
@@ -232,7 +237,7 @@ export function Dashboard(props: DashboardProps) {
             onOpenImage={openImage}
           />
           <ActivityFeed items={activity} now={now} onSelect={setSelectedId} />
-          <PeoplePanel people={props.people ?? []} now={now} />
+          <PeoplePanel people={props.people ?? []} now={now} onRename={props.onRenamePerson} />
         </aside>
       </main>
       {selected && (

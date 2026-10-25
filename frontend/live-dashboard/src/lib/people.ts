@@ -49,3 +49,53 @@ export function sortPeople(people: readonly Person[]): Person[] {
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 }
+
+export class RenameError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number
+  ) {
+    super(message);
+    this.name = 'RenameError';
+  }
+}
+
+/**
+ * Rename a person through FastAPI PUT /api/people/{id}. The endpoint replaces
+ * every field, so the rest of the row is sent back unchanged. The bridge then
+ * mirrors the new name into SpacetimeDB (within ~1.5 s).
+ */
+export async function renamePerson(
+  person: Pick<Person, 'id' | 'description' | 'relationship' | 'knownSince'>,
+  name: string,
+  apiBase = '',
+  fetchImpl: typeof fetch = fetch
+): Promise<void> {
+  let res: Response | undefined;
+  try {
+    res = await fetchImpl(`${apiBase.replace(/\/+$/, '')}/api/people/${String(person.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(),
+        description: person.description,
+        relationship: person.relationship,
+        known_since: person.knownSince || null,
+      }),
+    });
+  } catch {
+    throw new RenameError("Can't reach the RecallAI server to save the name.");
+  }
+  if (res?.ok) return;
+  let detail = '';
+  try {
+    const body = (await res?.json()) as { detail?: unknown } | undefined;
+    if (typeof body?.detail === 'string') detail = body.detail;
+  } catch {
+    /* non-JSON error body */
+  }
+  throw new RenameError(
+    res?.status === 404 ? 'That person no longer exists.' : `Couldn’t save the name${detail ? `: ${detail}` : '.'}`,
+    res?.status
+  );
+}

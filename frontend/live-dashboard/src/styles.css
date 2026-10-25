@@ -4,6 +4,12 @@
 :root {
   color-scheme: light dark;
   --bg: light-dark(#eef7fb, #0a1822);
+  /* page grid: the camera grid inverted, light lines on a tinted ground */
+  --page: light-dark(#ddeef6, #0a1822);
+  --grid-major: light-dark(rgb(255 255 255 / 95%), rgb(220 239 248 / 7%));
+  --grid-minor: light-dark(rgb(255 255 255 / 65%), rgb(220 239 248 / 3.5%));
+  --lens-bg: light-dark(#e8f4fa, #11303f);
+  --lens-glow: light-dark(rgb(255 255 255 / 75%), rgb(255 255 255 / 12%));
   --surface: light-dark(#ffffff, #10222d);
   --surface-2: light-dark(#f6fbfd, #142a37);
   --scene: light-dark(#dceff8, #163243);
@@ -311,6 +317,54 @@ a {
 }
 .tone-text-good {
   color: var(--live);
+}
+
+/* ---------- page grid + cursor lens ---------- */
+.gridbg {
+  --mx: -999px;
+  --my: -999px;
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  background-color: var(--page);
+  background-image: repeating-linear-gradient(0deg, var(--grid-major) 0 1.5px, transparent 1.5px 40px),
+    repeating-linear-gradient(90deg, var(--grid-major) 0 1.5px, transparent 1.5px 40px),
+    repeating-linear-gradient(0deg, var(--grid-minor) 0 1px, transparent 1px 10px),
+    repeating-linear-gradient(90deg, var(--grid-minor) 0 1px, transparent 1px 10px);
+  background-attachment: fixed;
+}
+/* A denser grid centred on the cursor, so nearby tiles swell and slide toward it
+   (--mx/--my come from useCursorLens). */
+.gridbg::before,
+.gridbg::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 400ms var(--ease);
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(circle 100px at var(--mx) var(--my), #000 0, rgb(0 0 0 / 60%) 45%, transparent 100%);
+  mask-image: radial-gradient(circle 100px at var(--mx) var(--my), #000 0, rgb(0 0 0 / 60%) 45%, transparent 100%);
+}
+.gridbg::before {
+  background-color: var(--lens-bg);
+  background-image: repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1px, transparent 1px 12.5px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1px, transparent 1px 12.5px);
+  background-position: calc(var(--mx) * -0.25) calc(var(--my) * -0.25);
+}
+.gridbg::after {
+  background: radial-gradient(circle 36px at var(--mx) var(--my), var(--lens-glow), transparent 100%);
+}
+.gridbg.lens-on::before,
+.gridbg.lens-on::after {
+  opacity: 1;
+}
+@media (hover: none) {
+  .gridbg::before,
+  .gridbg::after {
+    display: none;
+  }
 }
 
 /* ---------- top bar ---------- */
@@ -778,7 +832,6 @@ a {
   transition: opacity 450ms var(--ease);
   pointer-events: none;
 }
-.live::after,
 .card::after {
   content: '';
   position: absolute;
@@ -793,8 +846,37 @@ a {
   transition: opacity 300ms var(--ease);
   pointer-events: none;
 }
+/* Corner-to-corner light. With `to bottom right` the gradient's midline runs
+   exactly from the top-right corner to the bottom-left corner at any aspect
+   ratio; sliding the 300% image moves that band from the top-left corner to
+   the bottom-right one. Used by the live feed and the activity rows. Starts
+   parked off the box so nothing shows before the first hover. */
+.live::after,
+.feed-row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom right, transparent 47%, rgb(255 255 255 / 80%) 50%, transparent 53%) 0 0 / 300%
+    300% no-repeat;
+  opacity: 0;
+  transition: opacity 300ms var(--ease);
+  pointer-events: none;
+}
 .live::after {
-  z-index: -1;
+  z-index: 5; /* over the camera frame too; clicks pass through */
+}
+/* The band is on the box while the position is between 75% and 25%;
+   80% -> 20% starts it just outside the top-left corner and ends it just past
+   the bottom-right one. */
+@keyframes corner-sweep {
+  0% {
+    background-position: 80% 80%;
+    animation-timing-function: ease-in-out;
+  }
+  70%,
+  100% {
+    background-position: 20% 20%;
+  }
 }
 .live:hover {
   border-color: var(--sun-border);
@@ -805,7 +887,10 @@ a {
   opacity: var(--sun-alpha);
   animation: sun 2.6s ease-in-out infinite alternate;
 }
-.live:hover::after,
+.live:hover::after {
+  opacity: 0.6;
+  animation: corner-sweep 2.6s linear infinite;
+}
 .card:hover::after {
   opacity: 0.45;
   animation: shine 1.9s var(--ease) infinite;
@@ -927,6 +1012,12 @@ a {
   border: 0;
   background: transparent;
   transition: left 140ms linear, top 140ms linear, width 140ms linear, height 140ms linear;
+}
+/* The camera prints its own "name 91%" just above each box, so this tag sits
+   inside the top edge instead of stacking on top of it. */
+.lock .lock-tag {
+  top: 4px;
+  left: 4px;
 }
 .lock:hover .brackets {
   transform: scale(1.04);
@@ -1781,21 +1872,37 @@ button.thumb {
   }
 }
 .feed-row {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   width: 100%;
   padding: 10px 6px;
+  overflow: hidden;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   text-align: left;
-  transition: background-color 200ms var(--ease), transform 300ms var(--spring);
+  transition: background-color 260ms var(--ease), transform 300ms var(--spring), box-shadow 300ms var(--ease);
+}
+.feed-row::after {
+  z-index: -1;
 }
 .feed-row:hover {
-  background: var(--accent-soft);
+  background: var(--bubble-hover);
+  box-shadow: inset 0 0 0 1px var(--bubble-hover-border), 0 10px 20px -14px rgb(180 130 0 / 50%);
   transform: translateX(3px);
+}
+.feed-row:hover::after {
+  opacity: 0.8;
+  animation: corner-sweep 1.8s linear infinite;
+}
+.feed-row:hover .feed-title,
+.feed-row:hover .feed-sub,
+.feed-row:hover time {
+  color: light-dark(#3a2e00, #f3e3a3);
 }
 .dot {
   width: 10px;
@@ -1872,6 +1979,40 @@ button.thumb {
 }
 .person-name {
   font-weight: 700;
+}
+/* Double-click a name to rename it. */
+.name-btn {
+  margin: -1px -3px;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: text;
+  transition: background-color 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+.name-btn:hover {
+  background: var(--bubble-hover);
+  box-shadow: inset 0 0 0 1px var(--bubble-hover-border);
+}
+.name-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 24ch;
+  padding: 1px 5px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+}
+.people .notice {
+  margin-bottom: 10px;
 }
 .person-desc {
   color: var(--text-2);

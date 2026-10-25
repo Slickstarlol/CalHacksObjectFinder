@@ -295,7 +295,7 @@ def main():
                 x1, y1, x2, y2 = live_box(det.xyxy, detections)
                 p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
                 cv2.rectangle(display, p1, p2, (0, 255, 0), 3)
-                cv2.putText(display, f"{m.name} {m.score:.2f}",
+                cv2.putText(display, f"{m.name} {m.score:.0%}",
                             (p1[0], max(20, p1[1] - 10)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 

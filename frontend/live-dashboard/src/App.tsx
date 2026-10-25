@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
 import { reducers, tables } from './module_bindings';
-import type { Sighting } from './module_bindings/types';
+import type { Person, Sighting } from './module_bindings/types';
 import { Dashboard } from './components/Dashboard';
 import type { ConnectionStatus } from './components/types';
 import { useAsk } from './hooks/useAsk';
@@ -9,6 +9,7 @@ import { useLiveCamera } from './hooks/useLiveCamera';
 import { useNow } from './hooks/useNow';
 import { classifyUpdate, pushActivity, type ActivityItem } from './lib/activity';
 import { isVisible } from './lib/sightings';
+import { renamePerson } from './lib/people';
 import { ownedBy, ownerKey, type AuthUser } from './lib/auth';
 import { API_BASE } from './config';
 
@@ -92,6 +93,10 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
   const now = useNow(30_000);
   const ask = useAsk(API_BASE, authFetch);
   const camera = useLiveCamera(API_BASE, authFetch);
+  const onRenamePerson = useCallback(
+    (person: Person, name: string) => renamePerson(person, name, API_BASE, authFetch),
+    [authFetch]
+  );
 
   return (
     <Dashboard
@@ -109,6 +114,7 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
       onDismissAlert={onDismissAlert}
       ask={{ entries: ask.entries, pending: ask.pending, onAsk: ask.ask, onClear: ask.clear }}
       camera={camera}
+      onRenamePerson={onRenamePerson}
       account={{ name: user.display_name || user.username, username: user.username, onSignOut }}
     />
   );
