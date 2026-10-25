@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { Belonging, Sighting } from '../module_bindings/types';
 import { eventLabel, frameUrl, splitNearby, thumbUrl } from '../lib/sightings';
 import { formatClock, formatFull, formatRelative, microsToDate } from '../lib/time';
@@ -16,6 +17,8 @@ type Props = {
 
 export function TimelineDrawer({ belonging, sightings, now, apiBase, onClose, onOpenImage }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const onKeyDown = useFocusTrap(drawerRef);
   useEffect(() => {
     closeRef.current?.focus();
   }, [belonging.id]);
@@ -23,6 +26,8 @@ export function TimelineDrawer({ belonging, sightings, now, apiBase, onClose, on
   return (
     <div className="drawer-layer" onClick={onClose}>
       <aside
+        ref={drawerRef}
+        onKeyDown={onKeyDown}
         className="drawer"
         role="dialog"
         aria-modal="true"

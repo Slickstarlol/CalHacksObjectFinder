@@ -35,10 +35,12 @@ export function Header({ status, belongings, sightings, alerts }: Props) {
             <dd>{alerts}</dd>
           </div>
         </dl>
+        <a className="btn btn-primary ask-jump" href="#ask">
+          Ask
+        </a>
         <div className={`status status-${status}`} role="status" title="SpacetimeDB connection">
           <span className="status-dot" aria-hidden="true" />
           <span className="status-text">{LABEL[status]}</span>
-          <span className="status-sub">SpacetimeDB</span>
         </div>
       </div>
     </header>

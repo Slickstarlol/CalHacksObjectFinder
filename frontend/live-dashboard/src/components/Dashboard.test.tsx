@@ -56,7 +56,7 @@ describe('Dashboard', () => {
     expect(screen.getByText(/Loading your belongings/)).toBeInTheDocument();
     rerender(<Dashboard {...props} status="disconnected" />);
     expect(screen.getByRole('status')).toHaveTextContent('Disconnected');
-    expect(screen.getByText(/Can’t reach SpacetimeDB/)).toBeInTheDocument();
+    expect(screen.getByText(/Can’t reach the live database/)).toBeInTheDocument();
     rerender(<Dashboard {...props} status="live" />);
     expect(screen.getByText(/No belongings registered/)).toBeInTheDocument();
   });

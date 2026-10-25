@@ -35,7 +35,7 @@ export function AskPanel({ entries, pending, onAsk, onClear, sightingsById, apiB
   };
 
   return (
-    <section className="panel ask" aria-labelledby="ask-title">
+    <section className="panel ask" id="ask" aria-labelledby="ask-title">
       <header className="panel-head">
         <h2 id="ask-title">Ask RecallAI</h2>
         {entries.length > 0 && (

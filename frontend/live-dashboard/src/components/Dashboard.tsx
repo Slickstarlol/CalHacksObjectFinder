@@ -101,7 +101,7 @@ export function Dashboard(props: DashboardProps) {
           <section aria-labelledby="belongings-title">
             <header className="section-head">
               <h2 id="belongings-title">Your belongings</h2>
-              <span className="muted small">Tap a card for its history</span>
+              <span className="muted small">Select a card for its history</span>
             </header>
             {sorted.length === 0 ? (
               <div className="empty-state">
@@ -109,11 +109,11 @@ export function Dashboard(props: DashboardProps) {
                   <p>Loading your belongings…</p>
                 ) : status === 'disconnected' ? (
                   <p>
-                    Can’t reach SpacetimeDB. Is <code>spacetime start</code> running? Retrying…
+                    Can’t reach the live database. Retrying… (Developers: is <code>spacetime start</code> running?)
                   </p>
                 ) : (
                   <p>
-                    No belongings registered yet. Run <code>python register.py</code> to add one.
+                    No belongings registered yet. Run <code>python -m recallai.vision.register</code> to add one.
                   </p>
                 )}
               </div>
