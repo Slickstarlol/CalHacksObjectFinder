@@ -3,7 +3,7 @@ import { useCursorLens } from '../hooks/useCursorLens';
 import type { Alert, Belonging, Person, Sighting } from '../module_bindings/types';
 import type { ActivityItem } from '../lib/activity';
 import type { Box, CameraState } from '../lib/live';
-import type { LabelResult } from '../lib/people';
+import type { LabelResult, PersonDescription } from '../lib/people';
 import {
   activeAlerts,
   indexById,
@@ -53,6 +53,8 @@ export type DashboardProps = {
   onRenamePerson?: (person: Person, name: string) => Promise<void>;
   /** Names the person in a live-feed box (double-click it). Omitted -> people boxes are read-only. */
   onLabelPerson?: (bbox: Box, name: string, personId?: number) => Promise<LabelResult>;
+  /** Grok describes a person from the camera's photos (click them in People). */
+  onDescribePerson?: (person: Person, refresh: boolean) => Promise<PersonDescription>;
   initialSelectedId?: string | null;
   /** The signed-in account shown in the top bar, with its sign-out action. */
   account?: { name: string; username: string; onSignOut: () => void };
@@ -248,7 +250,13 @@ export function Dashboard(props: DashboardProps) {
             onOpenImage={openImage}
           />
           <ActivityFeed items={activity} now={now} onSelect={setSelectedId} />
-          <PeoplePanel people={props.people ?? []} now={now} onRename={props.onRenamePerson} />
+          <PeoplePanel
+            people={props.people ?? []}
+            now={now}
+            onRename={props.onRenamePerson}
+            onDescribe={props.onDescribePerson}
+            apiBase={apiBase}
+          />
         </aside>
       </main>
       {selected && (

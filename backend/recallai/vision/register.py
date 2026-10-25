@@ -29,6 +29,7 @@ import uuid
 import cv2
 
 from recallai import paths
+from recallai.vision.recognition import draw_corners
 
 BELONGINGS_DIR = paths.BELONGINGS_DIR
 CAMERA_INDEX = 1
@@ -136,8 +137,7 @@ def capture_from_webcam(model, folder, info, camera_index):
             box = largest_box(model, frame, info["category"])
             preview = frame.copy()
             if box:
-                x1, y1, x2, y2 = (int(v) for v in box)
-                cv2.rectangle(preview, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                draw_corners(preview, box, (0, 255, 0), 2)
             status = (f"{info['name']}: {count} saved | "
                       + ("S=save  " if box else f"no {info['category']} seen  ")
                       + "B=draw box  Q=done")

@@ -65,6 +65,15 @@ li.step.disabled .title, li.step.disabled .desc { color: var(--off); }
 .switch input:checked + span { background: var(--accent); }
 .switch input:checked + span::after { transform: translateX(18px); }
 .switch input:focus-visible + span { outline: 2px solid var(--info); outline-offset: 2px; }
+/* option dropdowns (e.g. which camera the Camera step uses) */
+.opts { grid-column: 2 / 4; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+.opt { display: flex; gap: 8px; align-items: center; color: var(--muted); font-weight: 600; }
+select { font: inherit; font-weight: 400; color: var(--fg); background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 8px; min-width: 200px; cursor: pointer; }
+select:hover:not(:disabled) { border-color: var(--muted); }
+select:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.opt-note { color: var(--muted); }
+.opt-note.bad { color: var(--bad); }
 details { grid-column: 1 / 4; margin-top: 6px; }
 summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 pre { background: var(--log-bg); color: var(--log-fg); border-radius: 10px; padding: 10px 12px; margin: 8px 0 0;
@@ -75,7 +84,8 @@ footer { margin-top: 22px; color: var(--muted); font-size: 13px; }
 @media (max-width: 560px) {
   li.step { grid-template-columns: auto 1fr; }
   .right { grid-row: auto; grid-column: 1 / 3; justify-content: flex-end; }
-  .meta, details { grid-column: 1 / 3; }
+  .meta, .opts, details { grid-column: 1 / 3; }
+  select { min-width: 0; flex: 1; }
 }
 </style>
 </head>
@@ -101,6 +111,43 @@ const $ = (s) => document.querySelector(s);
 const LABEL = { off: "Off", waiting: "Waiting", starting: "Starting", ready: "Running", done: "Done",
   "already-running": "Already running", failed: "Failed", skipped: "Skipped", stopped: "Stopped", exited: "Stopped by itself" };
 let state = null, openLogs = new Set(), logNext = {}, busy = false;
+// Dropdown lists from the launcher (e.g. "cameras"): {status, choices, error}
+const lists = {};
+
+async function loadList(name) {
+  if (lists[name] && lists[name].status === "loading") return;
+  lists[name] = { ...(lists[name] || { choices: [] }), status: "loading", error: null };
+  render();
+  try {
+    const r = await api(`/api/choices/${encodeURIComponent(name)}`);
+    lists[name] = { status: r.error ? "error" : "ok", choices: r.choices || [], error: r.error };
+  } catch (e) {
+    lists[name] = { status: "error", choices: [], error: "The launcher didn't answer." };
+  }
+  render();
+}
+
+function fillOption(li, s, o) {
+  const sel = li.querySelector(`select[data-opt="${CSS.escape(o.id)}"]`);
+  const note = li.querySelector(`[data-opt-note="${CSS.escape(o.id)}"]`);
+  const list = lists[o.choices] || { status: "loading", choices: [] };
+  const choices = [...list.choices];
+  if (o.value && !choices.some(c => c.value === o.value)) {
+    choices.unshift({ value: o.value, label: list.status === "loading"
+      ? `Camera ${o.value}` : `Camera ${o.value} (not found)` });
+  }
+  const sig = JSON.stringify(choices);
+  if (sel.dataset.sig !== sig) {
+    sel.replaceChildren(...choices.map(c => el("option", { value: c.value }, c.label)));
+    sel.dataset.sig = sig;
+  }
+  if (document.activeElement !== sel) sel.value = o.value;
+  const active = ["starting", "ready"].includes(s.status);
+  note.className = "opt-note" + (list.status === "error" ? " bad" : "");
+  note.textContent = list.status === "loading" ? "Looking for cameras…"
+    : list.status === "error" ? list.error
+    : active ? "Changing it restarts the camera." : "";
+}
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : {
@@ -148,6 +195,19 @@ function render() {
       stopBtn.onclick = () => api(`/api/step/${encodeURIComponent(s.id)}/stop`, {}).then(poll);
       const openBtn = el("button", { class: "small", "data-act": "open" }, "Open");
       openBtn.onclick = () => window.open(s.open_url, "_blank", "noopener");
+      const opts = (s.options || []).map(o => {
+        const sel = el("select", { "data-opt": o.id, "aria-label": `${o.label} for ${s.name}` });
+        sel.onchange = async () => {
+          state = await api("/api/option", { id: s.id, option: o.id, value: sel.value });
+          render();
+        };
+        const rescan = el("button", { class: "small", title: "Look for cameras again",
+          "aria-label": "Look for cameras again" }, "↻");
+        rescan.onclick = () => loadList(o.choices);
+        if (o.choices && !lists[o.choices]) setTimeout(() => loadList(o.choices));  // after this render
+        return el("div", { class: "opts" },
+          el("label", { class: "opt" }, o.label, sel), rescan, el("span", { "data-opt-note": o.id }));
+      });
       const details = el("details", {}, el("summary", {}, "Log"), el("pre", { "data-log": "" }));
       details.ontoggle = () => { details.open ? openLogs.add(s.id) : openLogs.delete(s.id); if (details.open) fetchLog(s.id); };
       li.append(
@@ -155,6 +215,7 @@ function render() {
         el("div", { class: "title" }, el("span", { "data-name": "" }), el("span", { class: "pill", "data-pill": "" })),
         el("div", { class: "right" }, startBtn, stopBtn, openBtn, el("label", { class: "switch" }, toggle, el("span"))),
         el("div", { class: "desc" }, s.description),
+        ...opts,
         el("div", { class: "meta" }, el("span", { class: "msg", "data-msg": "" })),
         details);
       ol.append(li);
@@ -174,6 +235,7 @@ function render() {
     open.hidden = !s.open_url;
     open.disabled = !["ready", "already-running"].includes(s.status);
     li.querySelector("[data-msg]").textContent = s.message || (s.enabled ? "" : "Off — this step will be skipped");
+    (s.options || []).forEach(o => fillOption(li, s, o));
   });
 }
 

@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Dashboard, type DashboardProps } from './Dashboard';
 import { parseLive, type Box, type CameraState } from '../lib/live';
-import type { LabelResult } from '../lib/people';
+import type { LabelResult, PersonDescription } from '../lib/people';
+import type { Person } from '../module_bindings/types';
 import {
   askEntries,
   belongings,
@@ -405,6 +406,62 @@ describe('Dashboard', () => {
   });
 
   describe('people panel', () => {
+    const grokSays = (over: Partial<PersonDescription> = {}): PersonDescription => ({
+      summary: 'Black hoodie',
+      description: 'Black hoodie and round glasses.',
+      samePerson: 'yes',
+      photos: ['/api/people/1/photos/reference_1.jpg'],
+      savedToNotes: false,
+      ...over,
+    });
+
+    it('asks Grok to describe a person when clicked, and keeps the answer', async () => {
+      let resolve!: (d: PersonDescription) => void;
+      const onDescribePerson = vi.fn((_p: Person, _refresh: boolean) => new Promise<PersonDescription>(r => (resolve = r)));
+      setup({ people: makePeople(NOW), onDescribePerson, onRenamePerson: vi.fn() });
+      const chawin = within(screen.getByRole('region', { name: 'People' })).getAllByTestId('person')[0];
+
+      await userEvent.click(within(chawin).getByText('Tall, glasses, CalHacks hoodie.'));
+      expect(onDescribePerson).toHaveBeenCalledWith(expect.objectContaining({ id: 1n }), false);
+      expect(within(chawin).getByText(/Looking at Chawin’s photos/)).toBeInTheDocument();
+      await act(async () => resolve(grokSays({ samePerson: 'no', savedToNotes: true })));
+      expect(within(chawin).getByText('Black hoodie')).toBeInTheDocument();
+      expect(within(chawin).getByText('Black hoodie and round glasses.')).toBeInTheDocument();
+      expect(within(chawin).getByText(/may show someone else/)).toBeInTheDocument();
+      expect(within(chawin).getByText('Saved to Chawin’s notes.')).toBeInTheDocument();
+      expect(chawin.querySelector('.person-photos img')).toHaveAttribute('src', '/api/people/1/photos/reference_1.jpg');
+
+      // Closing and reopening reuses the answer.
+      await userEvent.click(within(chawin).getByRole('button', { name: /^Hide what Grok sees/ }));
+      expect(within(chawin).queryByText('Black hoodie')).toBeNull();
+      await userEvent.click(within(chawin).getByRole('button', { name: /^Show what Grok sees/ }));
+      expect(within(chawin).getByText('Black hoodie')).toBeInTheDocument();
+      expect(onDescribePerson).toHaveBeenCalledTimes(1);
+
+      onDescribePerson.mockResolvedValueOnce(grokSays({ summary: 'Blue coat' }));
+      await userEvent.click(within(chawin).getByRole('button', { name: 'Ask again' }));
+      expect(onDescribePerson).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1n }), true);
+      expect(await within(chawin).findByText('Blue coat')).toBeInTheDocument();
+    });
+
+    it('a double-click on a name renames without asking Grok; a single click asks', async () => {
+      const onDescribePerson = vi.fn((_p: Person, _refresh: boolean) =>
+        Promise.reject(new Error('No photos of Mom yet. Name them on the live feed and the camera saves some.'))
+      );
+      setup({ people: makePeople(NOW), onDescribePerson, onRenamePerson: vi.fn(() => Promise.resolve()) });
+      const mom = within(screen.getByRole('region', { name: 'People' })).getAllByTestId('person')[1];
+      await userEvent.dblClick(within(mom).getByRole('button', { name: 'Mom, press Enter to rename' }));
+      expect(within(mom).getByRole('textbox', { name: 'New name for Mom' })).toBeInTheDocument();
+      await act(() => new Promise(r => setTimeout(r, 320)));
+      expect(onDescribePerson).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Escape}');
+
+      await userEvent.click(within(mom).getByRole('button', { name: 'Mom, press Enter to rename' }));
+      await act(() => new Promise(r => setTimeout(r, 320)));
+      expect(onDescribePerson).toHaveBeenCalledTimes(1);
+      expect(await within(mom).findByRole('alert')).toHaveTextContent('No photos of Mom yet.');
+    });
+
     it('lists people alphabetically with relationship and how long known', () => {
       setup({ people: makePeople(NOW) });
       const panel = screen.getByRole('region', { name: 'People' });

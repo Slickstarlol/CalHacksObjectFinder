@@ -9,7 +9,7 @@ import { useLiveCamera } from './hooks/useLiveCamera';
 import { useNow } from './hooks/useNow';
 import { classifyUpdate, pushActivity, type ActivityItem } from './lib/activity';
 import { isVisible } from './lib/sightings';
-import { labelPerson, renamePerson } from './lib/people';
+import { describePerson, labelPerson, renamePerson } from './lib/people';
 import type { Box } from './lib/live';
 import { ownedBy, ownerKey, type AuthUser } from './lib/auth';
 import { API_BASE } from './config';
@@ -102,6 +102,10 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
     (person: Person, name: string) => renamePerson(person, name, API_BASE, authFetch),
     [authFetch]
   );
+  const onDescribePerson = useCallback(
+    (person: Person, refresh: boolean) => describePerson(person.id, refresh, API_BASE, authFetch),
+    [authFetch]
+  );
 
   return (
     <Dashboard
@@ -121,6 +125,7 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
       camera={camera}
       onRenamePerson={onRenamePerson}
       onLabelPerson={onLabelPerson}
+      onDescribePerson={onDescribePerson}
       account={{ name: user.display_name || user.username, username: user.username, onSignOut }}
     />
   );

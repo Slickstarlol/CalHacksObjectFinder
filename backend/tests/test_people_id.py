@@ -178,3 +178,12 @@ def test_detection_labels_skip_your_belongings():
     skipped = blank.copy()
     webcam.draw_detections(skipped, [det], skip=[(22, 40, 120, 112)])
     assert not skipped.any()
+
+
+def test_boxes_are_drawn_as_corners_only():
+    from recallai.vision.recognition import draw_corners
+    img = np.zeros((120, 120, 3), np.uint8)
+    draw_corners(img, (10, 10, 110, 110), (0, 255, 0), 2)
+    assert img[10, 10].any() and img[110, 110].any() and img[10, 25].any()   # the corners
+    assert not img[10, 60].any() and not img[60, 10].any()                   # edges stay open
+    assert not img[60, 60].any()

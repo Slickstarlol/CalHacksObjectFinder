@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { knownFor, labelPerson, renamePerson, RenameError, sortPeople } from './people';
+import { describePerson, knownFor, labelPerson, renamePerson, RenameError, sortPeople } from './people';
 import type { Person } from '../module_bindings/types';
 
 const at = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12);
@@ -87,5 +87,32 @@ describe('labelPerson', () => {
     );
     await expect(run(json(404, { detail: 'No such person' }))).rejects.toThrow('That person no longer exists.');
     await expect(run(new TypeError('offline'))).rejects.toThrow("Can't reach the RecallAI server");
+  });
+});
+
+describe('describePerson', () => {
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+
+  it('POSTs refresh and maps the answer', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) =>
+      json(200, { summary: 'Red jacket', description: 'Red jacket.', same_person: 'no',
+                  photos: ['/api/people/3/photos/reference_1.jpg', 7], saved_to_notes: true, cached: false })
+    );
+    const res = await describePerson(3n, true, '/base/', fetchImpl as unknown as typeof fetch);
+    expect(fetchImpl.mock.calls[0][0]).toBe('/base/api/people/3/describe');
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({ refresh: true });
+    expect(res).toEqual({
+      summary: 'Red jacket', description: 'Red jacket.', samePerson: 'no',
+      photos: ['/api/people/3/photos/reference_1.jpg'], savedToNotes: true,
+    });
+  });
+
+  it('passes on why Grok could not answer', async () => {
+    const run = (res: Response | Error) =>
+      describePerson(3n, false, '', (() => (res instanceof Error ? Promise.reject(res) : Promise.resolve(res))) as unknown as typeof fetch);
+    await expect(run(json(409, { detail: 'No photos of Mom yet.' }))).rejects.toThrow('No photos of Mom yet.');
+    await expect(run(json(503, { detail: "Grok isn't set up" }))).rejects.toThrow("Grok isn't set up");
+    await expect(run(json(404, {}))).rejects.toThrow('That person no longer exists.');
+    await expect(run(new TypeError('offline'))).rejects.toThrow("Can't reach the RecallAI server.");
   });
 });

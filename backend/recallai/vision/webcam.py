@@ -25,7 +25,7 @@ from recallai.vision.live_feed import (LIVE_URL, PUBLISH_EVERY, SERVER_URL, Live
                                       device_headers)
 from recallai.vision.people_id import PERSON, PeopleMatcher, teach as teach_person
 from recallai.vision.recognition import (BelongingMatcher, box_iou as _iou, crop_box,
-                                         load_embedder)
+                                         draw_corners, load_embedder)
 from recallai.vision.recorder import Detection, SightingRecorder
 
 # ---------------------------------
@@ -213,7 +213,7 @@ def draw_detections(display, detections, skip=()):
             continue
         color = _color(d.category)
         x1, y1, x2, y2 = (int(v) for v in d.xyxy)
-        cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
+        draw_corners(display, (x1, y1, x2, y2), color, 2)
         label = f"{d.category} {d.confidence:.0%}"
         (tw, th), _ = cv2.getTextSize(label, font, scale, 1)
         top = y1 - th - 8 if y1 >= th + 8 else y1      # above the box, or just inside
@@ -345,8 +345,7 @@ def main():
                             if info.get("tracking"):
                                 worker.request_reload()
                 if outcome.box:
-                    x1, y1, x2, y2 = (int(v) for v in outcome.box)
-                    cv2.rectangle(display, (x1, y1), (x2, y2), (0, 220, 255), 2)
+                    draw_corners(display, outcome.box, (0, 220, 255), 2)
                 _paint_enroll(display, guide.message)
             else:
                 enrolling = False
@@ -357,11 +356,10 @@ def main():
                 last_recognize = now
 
             # Highlight your belongings in green with their name
-            for m, (x1, y1, x2, y2) in mine:
-                p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
-                cv2.rectangle(display, p1, p2, (0, 255, 0), 3)
+            for m, box in mine:
+                draw_corners(display, box, (0, 255, 0), 3)
                 cv2.putText(display, f"{m.name} {m.score:.0%}",
-                            (p1[0], max(20, p1[1] - 10)),
+                            (int(box[0]), max(20, int(box[1]) - 10)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             dt = now - last_frame

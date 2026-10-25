@@ -144,6 +144,17 @@ def find_or_create(name, owner_id, db_path=None):
     return _row(row), True
 
 
+def set_description(person_id, owner_id, description, db_path=None):
+    """Replace one of the owner's people's notes. Returns True if it changed."""
+    dbmod.init_db(db_path)
+    with dbmod.connect(db_path) as db:
+        cur = db.execute("UPDATE people SET description=?, updated_at=? "
+                         "WHERE id=? AND owner_id=?",
+                         (description.strip()[:2000], _now(), person_id, owner_id))
+        db.commit()
+    return cur.rowcount > 0
+
+
 def names_by_id(owner_id, db_path=None):
     """{person id: name} for the owner's people."""
     dbmod.init_db(db_path)

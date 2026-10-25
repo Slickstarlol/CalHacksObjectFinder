@@ -388,3 +388,71 @@ def test_ask_and_alert_endpoints(world, monkeypatch):
     assert api.post(f"/api/alerts/{alerts[0]['id']}/dismiss").status_code == 200
     assert api.get("/api/alerts").json() == []
     assert api.post("/api/alerts/999/dismiss").status_code == 404
+
+
+# ================================================================ describe a person
+def test_grok_describes_a_person_from_their_photos(tmp_path, monkeypatch):
+    import time
+    from fastapi.testclient import TestClient
+    from recallai.api import server
+    from recallai.vision.people_id import save_reference
+    monkeypatch.setattr(dbmod, "DB_PATH", tmp_path / "m.db")
+    dbmod.init_db()
+    api = TestClient(server.app)
+    sign_in(api)
+    maya = api.post("/api/people", json={"name": "Maya", "relationship": "friend"}).json()
+    url = f"/api/people/{maya['id']}/describe"
+
+    none_yet = api.post(url, json={})
+    assert none_yet.status_code == 409 and "No photos of Maya" in none_yet.json()["detail"]
+
+    for seed in range(5):
+        save_reference(maya["id"], make_object_image(RED, seed=seed))
+        time.sleep(0.002)
+    client = FakeClient(reply(fcall("describe_person", {
+        "summary": "Red jacket", "description": "Red jacket and a black backpack.",
+        "same_person": "yes"})))
+    monkeypatch.setattr(server.agent, "client", client)
+
+    first = api.post(url, json={})
+    assert first.status_code == 200
+    body = first.json()
+    assert body["summary"] == "Red jacket" and body["same_person"] == "yes"
+    assert body["cached"] is False and body["saved_to_notes"] is True
+    assert len(body["photos"]) == 4                      # the newest four
+    sent = client.calls[0]
+    assert sent["tool_choice"] == "required" and sent["tools"][0]["name"] == "describe_person"
+    content = sent["input"][0]["content"]
+    assert sum(c["type"] == "input_image" for c in content) == 4
+    assert '"Maya" (friend)' in content[-1]["text"]
+    # With no notes yet, Grok's description becomes them.
+    assert api.get("/api/people").json()[0]["description"] == "Red jacket and a black backpack."
+
+    # Clicking again reuses the answer: no second Grok call.
+    again = api.post(url, json={}).json()
+    assert again["cached"] is True and again["saved_to_notes"] is False
+    assert len(client.calls) == 1
+
+    # "Ask again" calls Grok, but never overwrites notes that exist.
+    client.script = [reply(fcall("describe_person", {
+        "summary": "Blue coat", "description": "Now in a blue coat.", "same_person": "no"}))]
+    fresh = api.post(url, json={"refresh": True}).json()
+    assert fresh["summary"] == "Blue coat" and fresh["same_person"] == "no"
+    assert fresh["saved_to_notes"] is False and len(client.calls) == 2
+    assert api.get("/api/people").json()[0]["description"] == "Red jacket and a black backpack."
+
+    # Photos are served to the owner only.
+    photo = api.get(body["photos"][0])
+    assert photo.status_code == 200 and photo.content.startswith(b"\xff\xd8")
+    assert api.get(f"/api/people/{maya['id']}/photos/nope.jpg").status_code == 404
+    other = TestClient(server.app)
+    sign_in(other, "lois")
+    assert other.get(body["photos"][0]).status_code == 404
+    assert other.post(url, json={}).status_code == 404
+
+    monkeypatch.setattr(server.agent, "client", FakeClient(RuntimeError("rate limited")))
+    failed = api.post(url, json={"refresh": True})
+    assert failed.status_code == 502 and "rate limited" in failed.json()["detail"]
+    monkeypatch.setattr(server.agent, "client", None)
+    assert api.post(url, json={"refresh": True}).status_code == 503
+    assert api.post(url, json={}).json()["summary"] == "Blue coat"   # cache still answers

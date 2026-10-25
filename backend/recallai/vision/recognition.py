@@ -272,6 +272,16 @@ def crop_box(frame, xyxy, pad=0.08):
     return frame[y1:y2, x1:x2]
 
 
+def draw_corners(image, xyxy, color, thickness=2):
+    """Mark a box by its four corners only (like the dashboard's brackets),
+    so the object inside stays visible."""
+    x1, y1, x2, y2 = (int(v) for v in xyxy)
+    arm = max(6, int(min(x2 - x1, y2 - y1) * 0.22))
+    for x, y, dx, dy in ((x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)):
+        cv2.line(image, (x, y), (x + dx * arm, y), color, thickness, cv2.LINE_AA)
+        cv2.line(image, (x, y), (x, y + dy * arm), color, thickness, cv2.LINE_AA)
+
+
 def box_iou(a, b):
     """Overlap of two (x1, y1, x2, y2) boxes: intersection over union, 0..1."""
     ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))

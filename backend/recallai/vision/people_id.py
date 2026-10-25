@@ -48,6 +48,11 @@ def _references(folder):
         return []
 
 
+def photos_of(person_id, base_dir=None):
+    """The camera's photos of a person, newest first."""
+    return _references(person_folder(person_id, base_dir))[::-1]
+
+
 def save_reference(person_id, crop_bgr, base_dir=None, keep=MAX_REFERENCES):
     """Store one crop of a person and drop the oldest beyond `keep`."""
     folder = person_folder(person_id, base_dir)

@@ -55,6 +55,9 @@
       "cwd": ".",
       "enabled": true,
       "needs": ["python"],
+      "options": [
+        {"id": "camera", "label": "Output", "flag": "--camera", "default": "0", "choices": "cameras"}
+      ],
       "ready": {"type": "alive", "seconds": 20},
       "timeout": 120
     },

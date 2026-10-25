@@ -8,6 +8,11 @@ Each step (see steps.json) is a command plus a way to know it is ready:
 Steps run strictly in order: the next starts only when the previous is ready.
 If a step fails, the remaining steps are skipped and nothing else is started.
 
+A step can have options (a dropdown in the panel), e.g. which camera the
+Camera step uses: {"id", "label", "flag", "default", "choices"}. The chosen
+value is passed as `flag value` and remembered in settings.local.json;
+"choices" names a list the launcher can look up (CHOICE_COMMANDS).
+
 Pure standard library so it runs with any Python and freezes into an .exe.
 """
 
@@ -39,6 +44,13 @@ REPO_ROOT = LAUNCHER_DIR.parent
 STEPS_FILE = LAUNCHER_DIR / "steps.json"
 SETTINGS_FILE = LAUNCHER_DIR / "settings.local.json"   # your toggles (git-ignored)
 LOG_DIR = LAUNCHER_DIR / "logs"
+
+# Lists a dropdown can offer, each printed as JSON by a backend command.
+# cameras: [{"index": 0, "width": 1280, "height": 720}, ...]
+CHOICE_COMMANDS = {
+    "cameras": ["{python}", "-m", "recallai.vision.cameras", "--json"],
+}
+CHOICE_TIMEOUT = 45
 
 STATES = ("off", "waiting", "starting", "ready", "done", "already-running",
           "failed", "skipped", "stopped", "exited")
@@ -143,6 +155,8 @@ class Step:
     open_url: str = ""
     install_if_missing: str = ""      # e.g. "node_modules" -> run `npm install` first
     needs: list = field(default_factory=list)   # tools: python / npm / spacetime
+    options: list = field(default_factory=list)  # dropdowns, see the module docstring
+    values: dict = field(default_factory=dict)   # option id -> chosen value
     # runtime
     status: str = "off"
     message: str = ""
@@ -159,7 +173,19 @@ class Step:
             "pid": self.pid, "open_url": self.open_url,
             "command": " ".join(self.command), "cwd": self.cwd,
             "kind": self.ready.get("type"), "log_count": self.log_count,
+            "options": [{"id": o["id"], "label": o.get("label", o["id"]),
+                         "choices": o.get("choices"), "value": self.values.get(o["id"], "")}
+                        for o in self.options],
         }
+
+    def option_args(self):
+        """[flag, value, ...] for every option with a value."""
+        args = []
+        for o in self.options:
+            value = str(self.values.get(o["id"], "")).strip()
+            if value and o.get("flag"):
+                args += [o["flag"], value]
+        return args
 
 
 def load_steps(steps_file=None, settings_file=None):
@@ -171,12 +197,17 @@ def load_steps(steps_file=None, settings_file=None):
     ids = [s.id for s in steps]
     if len(set(ids)) != len(ids):
         raise ValueError("duplicate step ids in steps.json")
+    for s in steps:
+        s.values = {o["id"]: str(o.get("default", "")) for o in s.options}
     try:
         saved = json.loads(Path(settings_file).read_text(encoding="utf-8"))
         for s in steps:
             if s.id in saved.get("enabled", {}):
                 s.enabled = bool(saved["enabled"][s.id])
-    except (OSError, ValueError):
+            for oid, value in (saved.get("options", {}).get(s.id) or {}).items():
+                if oid in s.values:
+                    s.values[oid] = str(value)
+    except (OSError, ValueError, AttributeError):
         pass
     for s in steps:
         s.status = "waiting" if s.enabled else "off"
@@ -186,7 +217,9 @@ def load_steps(steps_file=None, settings_file=None):
 def save_settings(steps, settings_file=None):
     try:
         Path(settings_file or SETTINGS_FILE).write_text(json.dumps(
-            {"enabled": {s.id: s.enabled for s in steps}}, indent=2), encoding="utf-8")
+            {"enabled": {s.id: s.enabled for s in steps},
+             "options": {s.id: s.values for s in steps if s.values}}, indent=2),
+            encoding="utf-8")
     except OSError:
         pass
 
@@ -238,7 +271,7 @@ class Runner:
                     "python": "Install Python 3.10+",
                 }.get(missing[0], ""))
         return [str(self.tools.get(tok[1:-1], tok)) if tok.startswith("{") and tok.endswith("}")
-                else tok for tok in step.command]
+                else tok for tok in step.command] + step.option_args()
 
     def _env(self):
         env = dict(os.environ)
@@ -411,6 +444,57 @@ class Runner:
             if s.status == "ready" and s.ready.get("type") != "exit" and s.proc \
                     and s.proc.poll() is not None:
                 self._set(s, "exited", f"process ended (code {s.proc.returncode}); see log")
+
+    # -- dropdowns -----------------------------------------------------------
+    def choices(self, name):
+        """Look up a dropdown list, e.g. the cameras on this computer.
+        Returns {"choices": [{"value", "label"}], "error": str | None}."""
+        if name not in CHOICE_COMMANDS:
+            raise KeyError(name)
+        users = [(s, o) for s in self.steps for o in s.options if o.get("choices") == name]
+        # Don't open a camera a running step is using; list it as in use.
+        busy = {s.values.get(o["id"]) for s, o in users if s.status in ACTIVE and self._alive(s)}
+        busy.discard(None)
+        argv = [str(self.tools.get(t[1:-1], t)) if t.startswith("{") and t.endswith("}") else t
+                for t in CHOICE_COMMANDS[name]]
+        for value in sorted(busy):
+            argv += ["--skip", value]
+        try:
+            out = subprocess.run(argv, cwd=str(self.repo_root), env=self._env(),
+                                 capture_output=True, text=True, encoding="utf-8",
+                                 errors="replace", timeout=CHOICE_TIMEOUT,
+                                 creationflags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0)
+            found = json.loads(out.stdout.strip().splitlines()[-1]) if out.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
+            found = None
+        if found is None:
+            return {"choices": [{"value": v, "label": f"Camera {v} (in use)"} for v in sorted(busy)],
+                    "error": "Couldn't look for cameras. Is the backend installed "
+                             "(pip install -r backend/requirements.txt)?"}
+        listed = [{"value": str(c["index"]),
+                   "label": f"Camera {c['index']} · {c['width']}×{c['height']}"} for c in found]
+        listed += [{"value": v, "label": f"Camera {v} (in use)"} for v in sorted(busy)]
+        listed.sort(key=lambda c: int(c["value"]) if c["value"].isdigit() else 99)
+        return {"choices": listed, "error": None}
+
+    def set_option(self, step_id, option_id, value):
+        """Choose a dropdown value. A running step restarts to use it."""
+        s = self.by_id[step_id]
+        if option_id not in s.values:
+            raise KeyError(option_id)
+        value = str(value).strip()
+        with self.lock:
+            changed = s.values[option_id] != value
+            s.values[option_id] = value
+        if changed and s.status in ACTIVE and self._alive(s) and not self.running_sequence:
+            self._log(s, f"[launcher] {option_id} changed to {value}: restarting")
+            threading.Thread(target=self._restart, args=(s,), daemon=True).start()
+            return s, True
+        return s, False
+
+    def _restart(self, step):
+        self.stop_step(step)
+        self.start_step(step)
 
     def set_enabled(self, step_id, enabled):
         s = self.by_id[step_id]

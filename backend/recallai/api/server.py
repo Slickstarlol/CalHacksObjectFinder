@@ -27,7 +27,8 @@ from pydantic import BaseModel, Field
 from recallai import owners, paths
 from recallai.memory import db as dbmod
 from recallai.ai.agent import RecallAgent, MemoryTools
-from recallai.memory.people import find_or_create, get_person, names_by_id
+from recallai.ai.describe import MAX_PHOTOS, cached as cached_description, describe, save_cache
+from recallai.memory.people import find_or_create, get_person, names_by_id, set_description
 from recallai.memory.people import router as people_router
 from recallai.api import search
 from recallai.api.auth import current_user, media_user, require_device
@@ -36,7 +37,7 @@ from recallai.api.search import router as search_router
 from recallai.vision.enroll import ANGLES
 from recallai.sync.spacetime_bridge import SpacetimeBridge
 from recallai.ai.watcher import Watcher
-from recallai.vision.people_id import PERSON, SNAP_IOU
+from recallai.vision.people_id import PERSON, SNAP_IOU, person_folder, photos_of
 from recallai.vision.recognition import box_iou, load_belongings, set_owner
 
 SNAPSHOT_DIR = paths.SNAPSHOT_DIR   # data/snapshots, served (per owner) at /snapshots
@@ -397,6 +398,61 @@ def label_live_person(body: LabelPerson, user=Depends(current_user)):
                              "width": snap["width"]})
         del _people_jobs[:-MAX_PEOPLE_JOBS]
     return {"person": person, "created": created, "bbox": best}
+
+
+class DescribeBody(BaseModel):
+    refresh: bool = False
+
+
+@app.post("/api/people/{person_id}/describe")
+def describe_person(person_id: int, body: DescribeBody | None = None,
+                    user=Depends(current_user)):
+    """Grok describes one of your people from the camera's photos of them
+    (click a person in the People panel). The answer is kept until new
+    photos arrive; `refresh` asks again. It becomes their notes if they had
+    none yet."""
+    person = get_person(person_id, user["id"])
+    if person is None:
+        raise HTTPException(404, "No such person")
+    photos = photos_of(person_id)[:MAX_PHOTOS]
+    if not photos:
+        raise HTTPException(409, f"No photos of {person['name']} yet. Name them on "
+                                 "the live feed and the camera saves some.")
+    folder = person_folder(person_id)
+    result = None if body and body.refresh else cached_description(folder, photos)
+    fresh = result is None
+    if fresh:
+        if agent.client is None:
+            raise HTTPException(503, "Grok isn't set up: add XAI_API_KEY to .env "
+                                     "and restart the server.")
+        try:
+            found = describe(agent.client, person, photos,
+                             owner=user.get("display_name") or "the user")
+        except Exception as e:
+            raise HTTPException(502, f"Grok couldn't describe {person['name']} ({e}).")
+        result = save_cache(folder, photos, found)
+    saved = bool(fresh and result["description"] and not person["description"]
+                 and set_description(person_id, user["id"], result["description"]))
+    return {
+        "summary": result["summary"],
+        "description": result["description"],
+        "same_person": result["same_person"],
+        "photos": [f"/api/people/{person_id}/photos/{p.name}" for p in photos],
+        "cached": not fresh,
+        "saved_to_notes": saved,
+        "at": result.get("at"),
+    }
+
+
+@app.get("/api/people/{person_id}/photos/{name}")
+def person_photo(person_id: int, name: str, user=Depends(media_user)):
+    """One of the camera's photos of your person (for <img>, so ?token= works)."""
+    if get_person(person_id, user["id"]) is None:
+        raise HTTPException(404, "Not found")
+    photo = next((p for p in photos_of(person_id) if p.name == name), None)
+    if photo is None:
+        raise HTTPException(404, "Not found")
+    return FileResponse(photo, headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/api/device/gps")

@@ -83,6 +83,19 @@ function Demo() {
           people: prev.people.map(p => (p.personId === Number(person.id) ? { ...p, name } : p)),
         }));
       }}
+      onDescribePerson={async (person, refresh) => {
+        // Stand-in for POST /api/people/{id}/describe (Grok on the camera's photos).
+        await wait(refresh ? 1600 : 1100);
+        if (person.id !== 1n) throw new Error(`No photos of ${person.name} yet. Name them on the live feed and the camera saves some.`);
+        return {
+          summary: refresh ? 'Dark hoodie, glasses' : 'Black hoodie, round glasses',
+          description:
+            'Black CalHacks hoodie with the hood down, round dark-framed glasses and short dark hair. Usually leaning over a laptop at the long table.',
+          samePerson: 'yes',
+          photos: ['/demo/person_chawin_1.jpg', '/demo/person_chawin_2.jpg'],
+          savedToNotes: false,
+        };
+      }}
       onLabelPerson={async (bbox, name, personId) => {
         // Stand-in for POST /api/live/people, then the camera recognizing them.
         await wait(400);

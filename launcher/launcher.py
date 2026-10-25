@@ -8,7 +8,8 @@
     python launcher/launcher.py --list
 
 The control panel (http://127.0.0.1:8765) has a switch per step, Start all /
-Stop all, per-step start/stop and live logs. Closing the panel tab does not stop
+Stop all, per-step start/stop, live logs, and a dropdown on the Camera step
+to choose which camera it uses. Closing the panel tab does not stop
 anything; press "Quit launcher" (or Ctrl+C in the launcher window) to stop all.
 """
 
@@ -84,6 +85,11 @@ def make_handler(runner, steps, on_quit):
                 if sid not in runner.by_id:
                     return self._json({"error": "unknown step"}, 404)
                 self._json(runner.logs(sid, since))
+            elif path.startswith("/api/choices/"):
+                name = path.rsplit("/", 1)[-1]
+                if name not in core.CHOICE_COMMANDS:
+                    return self._json({"error": "unknown list"}, 404)
+                self._json(runner.choices(name))
             else:
                 self._json({"error": "not found"}, 404)
 
@@ -114,6 +120,13 @@ def make_handler(runner, steps, on_quit):
                 runner.set_enabled(sid, body.get("enabled"))
                 core.save_settings(steps)
                 return self._json(runner.state())
+            if path == "/api/option":
+                sid, oid = body.get("id"), body.get("option")
+                if sid not in runner.by_id or oid not in runner.by_id[sid].values:
+                    return self._json({"error": "unknown option"}, 404)
+                _, restarting = runner.set_option(sid, oid, body.get("value", ""))
+                core.save_settings(steps)
+                return self._json({**runner.state(), "restarting": restarting})
             if path.startswith("/api/step/"):
                 parts = path.strip("/").split("/")   # api, step, <id>, <action>
                 if len(parts) != 4 or parts[2] not in runner.by_id:

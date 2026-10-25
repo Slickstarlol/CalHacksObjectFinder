@@ -1022,8 +1022,13 @@ a {
 .lock:hover .brackets {
   transform: scale(1.04);
 }
+/* Keyboard focus keeps the corners-only look: the brackets light up. */
 .lock:focus-visible {
-  outline-offset: 4px;
+  outline: none;
+}
+.lock:focus-visible .brackets {
+  --b: #fff3b0;
+  transform: scale(1.06);
 }
 .live-side {
   display: flex;
@@ -2018,6 +2023,115 @@ button.thumb {
   color: var(--text-2);
   font-size: 13px;
 }
+/* Click a person for Grok's description of them. */
+.person.is-clickable {
+  margin: -6px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 160ms var(--ease);
+}
+.person.is-clickable:hover,
+.person.is-open {
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+button.person-tile {
+  border: 0;
+  color: inherit;
+  transition: transform 300ms var(--spring), box-shadow 200ms var(--ease);
+}
+button.person-tile:hover {
+  transform: scale(1.06) rotate(-3deg);
+}
+.person.is-open .person-tile {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.person-spark {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--faint);
+  transition: color 160ms var(--ease), transform 300ms var(--spring);
+}
+.person.is-clickable:hover .person-spark,
+.person.is-open .person-spark {
+  color: var(--accent);
+  transform: rotate(20deg) scale(1.1);
+}
+.person-grok {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  cursor: default;
+  animation: event-in 420ms var(--spring) both;
+}
+.person-photos {
+  display: flex;
+  gap: 6px;
+}
+.person-photos img {
+  width: 52px;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: cover;
+  animation: pop 360ms var(--spring) both;
+}
+.person-photos img:nth-child(2) {
+  animation-delay: 60ms;
+}
+.person-photos img:nth-child(3) {
+  animation-delay: 120ms;
+}
+.person-photos img:nth-child(4) {
+  animation-delay: 180ms;
+}
+.grok-bubble {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 4px var(--radius-sm) var(--radius-sm) var(--radius-sm);
+  background: var(--info-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.grok-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--info);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.grok-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.grok-summary {
+  font-weight: 700;
+}
+.grok-warn {
+  color: var(--warn);
+}
+.grok-error {
+  color: var(--danger);
+}
+.grok-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.grok-again {
+  min-height: 0;
+  margin-left: -8px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
 
 /* ---------- drawer ---------- */
 .drawer-layer {
@@ -2296,11 +2410,11 @@ button.thumb {
 /* The person whose row is hovered or being named. */
 .lock-person.is-focus {
   z-index: 4;
-  outline: 1.5px dashed #fff3b0;
-  outline-offset: 0;
 }
+/* Corners only, like every detection box: brighter and a little bigger. */
 .lock-person.is-focus .brackets {
   --b: #fff3b0;
+  transform: scale(1.05);
 }
 .lock-person.is-focus .lock-tag {
   background: #fff3b0;

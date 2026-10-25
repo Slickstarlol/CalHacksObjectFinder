@@ -20,6 +20,9 @@ panel opens in your browser at http://127.0.0.1:8765:
   are skipped and its log tells you why.
 - Each step also has its own **Start** / **Stop** button and a live **Log**
   (also saved in `launcher/logs/<step>.log`).
+- The **Camera** step has an **Output** dropdown listing the cameras on this
+  computer (↻ looks again). The choice is passed as `--camera N` and
+  remembered; changing it while the camera runs restarts it.
 - Something already running (e.g. you started the server yourself) is detected
   and not started twice.
 - First run of a dashboard runs `npm install` automatically.
@@ -47,6 +50,7 @@ Set `RECALLAI_PYTHON` to pick a specific Python.
 
 ## Adding or changing steps
 Edit `steps.json`. Each step has a `command` (`{python}`, `{npm}`, `{spacetime}`
-are filled in), a `cwd` relative to the repo root, and a `ready` check:
+are filled in), a `cwd` relative to the repo root, optional `options`
+(dropdowns: `{"id", "label", "flag", "default", "choices"}`), and a `ready` check:
 `{"type": "http", "url": ...}`, `{"type": "port", "port": ...}`,
 `{"type": "exit"}` (one-shot) or `{"type": "alive", "seconds": N}`.

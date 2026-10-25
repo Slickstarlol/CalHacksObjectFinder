@@ -352,3 +352,119 @@ def test_cli_list_and_only_validation(capsys):
     assert "server" in out and "live-dashboard" in out
     with pytest.raises(SystemExit):
         launcher_mod.main(["--only", "server,nonsense", "--list"])
+
+
+# --------------------------------------------------------------- dropdown options
+def test_camera_step_has_an_output_dropdown(tmp_path):
+    settings = tmp_path / "settings.local.json"
+    by = {s.id: s for s in core.load_steps(LAUNCHER / "steps.json", settings)}
+    cam = by["camera"]
+    assert [o["id"] for o in cam.options] == ["camera"] and cam.values == {"camera": "0"}
+    assert cam.public()["options"] == [
+        {"id": "camera", "label": "Output", "choices": "cameras", "value": "0"}]
+    r = runner_for(list(by.values()), tmp_path)
+    assert r._expand(cam)[-2:] == ["--camera", "0"]
+
+    cam.values["camera"] = "2"
+    core.save_settings(list(by.values()), settings)
+    again = {s.id: s for s in core.load_steps(LAUNCHER / "steps.json", settings)}
+    assert again["camera"].values == {"camera": "2"}
+    assert json.loads(settings.read_text())["options"] == {"camera": {"camera": "2"}}
+
+
+def fake_cameras(monkeypatch, tmp_path, found):
+    """The camera list command, faked: prints `found` and logs its argv."""
+    argv_log = tmp_path / "argv.json"
+    code = (f"import json,sys;open({str(argv_log)!r},'w').write(json.dumps(sys.argv[1:]));"
+            f"print('noise');print(json.dumps({found!r}))")
+    monkeypatch.setitem(core.CHOICE_COMMANDS, "cameras", [PY, "-c", code])
+    return argv_log
+
+
+def cam_step(marker, **kw):
+    code = (f"import sys,time;open({str(marker)!r},'a').write(' '.join(sys.argv[1:])+chr(10));"
+            "time.sleep(30)")
+    s = step("camera", [PY, "-c", code], ready={"type": "alive", "seconds": 0.2}, **kw)
+    s.options = [{"id": "camera", "label": "Output", "flag": "--camera", "choices": "cameras"}]
+    s.values = {"camera": "0"}
+    return s
+
+
+def test_choices_list_cameras_and_skip_the_one_in_use(tmp_path, monkeypatch):
+    argv_log = fake_cameras(monkeypatch, tmp_path, [
+        {"index": 0, "width": 1280, "height": 720}, {"index": 2, "width": 640, "height": 480}])
+    s = cam_step(tmp_path / "m.txt")
+    r = runner_for([s], tmp_path)
+    got = r.choices("cameras")
+    assert got == {"error": None, "choices": [
+        {"value": "0", "label": "Camera 0 · 1280×720"},
+        {"value": "2", "label": "Camera 2 · 640×480"}]}
+    assert json.loads(argv_log.read_text()) == []
+
+    assert r.start_step(s)            # camera 0 is now busy: don't open it again
+    try:
+        fake_cameras(monkeypatch, tmp_path, [{"index": 2, "width": 640, "height": 480}])
+        got = r.choices("cameras")
+        assert json.loads(argv_log.read_text()) == ["--skip", "0"]
+        assert [c["label"] for c in got["choices"]] == ["Camera 0 (in use)", "Camera 2 · 640×480"]
+    finally:
+        r.stop_step(s)
+
+    monkeypatch.setitem(core.CHOICE_COMMANDS, "cameras", [PY, "-c", "import sys;sys.exit(3)"])
+    assert r.choices("cameras")["error"].startswith("Couldn't look for cameras")
+
+
+def test_changing_the_camera_restarts_a_running_step(tmp_path):
+    marker = tmp_path / "m.txt"
+    s = cam_step(marker)
+    r = runner_for([s], tmp_path)
+    _, restarting = r.set_option("camera", "camera", "1")    # not running: just remembered
+    assert restarting is False and s.values["camera"] == "1"
+    assert r.start_step(s)
+    try:
+        first_pid = s.pid
+        _, restarting = r.set_option("camera", "camera", "2")
+        assert restarting is True
+        deadline = time.time() + 15
+        while time.time() < deadline and not (s.pid != first_pid and s.status == "ready"):
+            time.sleep(0.1)
+        assert s.pid != first_pid and s.status == "ready"
+        assert marker.read_text().split("\n")[:2] == ["--camera 1", "--camera 2"]
+        assert not pid_alive(first_pid)
+    finally:
+        r.stop_step(s)
+    with pytest.raises(KeyError):
+        r.set_option("camera", "nope", "1")
+
+
+def test_panel_dropdown_api(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "SETTINGS_FILE", tmp_path / "settings.local.json")
+    fake_cameras(monkeypatch, tmp_path, [{"index": 1, "width": 640, "height": 480}])
+    steps = [cam_step(tmp_path / "m.txt")]
+    r = runner_for(steps, tmp_path)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), launcher_mod.make_handler(r, steps, lambda: None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_port}"
+
+    def call(path, body=None):
+        req = Request(base + path, data=None if body is None else json.dumps(body).encode(),
+                      method="GET" if body is None else "POST")
+        try:
+            with urlopen(req, timeout=10) as resp:
+                return resp.status, json.loads(resp.read())
+        except Exception as e:
+            return e.code, json.loads(e.read())
+    try:
+        assert call("/api/choices/cameras") == (200, {"error": None, "choices": [
+            {"value": "1", "label": "Camera 1 · 640×480"}]})
+        assert call("/api/choices/nope")[0] == 404
+        code, st = call("/api/option", {"id": "camera", "option": "camera", "value": "1"})
+        assert code == 200 and st["restarting"] is False
+        assert st["steps"][0]["options"][0]["value"] == "1"
+        saved = json.loads((tmp_path / "settings.local.json").read_text())
+        assert saved["options"] == {"camera": {"camera": "1"}}
+        assert call("/api/option", {"id": "camera", "option": "x", "value": "1"})[0] == 404
+        assert call("/api/option", {"id": "nope", "option": "camera", "value": "1"})[0] == 404
+    finally:
+        httpd.shutdown()
+        r.stop_all()

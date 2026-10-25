@@ -147,3 +147,51 @@ export async function labelPerson(
     bbox: box && box.every(Number.isFinite) ? box : null,
   };
 }
+
+export type PersonDescription = {
+  /** 3-6 words to spot them, e.g. "Black hoodie, round glasses". */
+  summary: string;
+  description: string;
+  /** Grok's check that every photo shows the same person. */
+  samePerson: 'yes' | 'no' | 'unsure';
+  /** The camera's photos of them (API paths; resolveUrl adds ?token=). */
+  photos: string[];
+  /** Grok's description became their notes (they had none). */
+  savedToNotes: boolean;
+};
+
+/**
+ * Grok describes a person from the camera's photos of them
+ * (POST /api/people/{id}/describe). Cached on the server until new photos
+ * arrive; `refresh` asks Grok again.
+ */
+export async function describePerson(
+  personId: bigint | number,
+  refresh = false,
+  apiBase = '',
+  fetchImpl: typeof fetch = fetch
+): Promise<PersonDescription> {
+  let res: Response | undefined;
+  try {
+    res = await fetchImpl(`${apiBase.replace(/\/+$/, '')}/api/people/${String(personId)}/describe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    });
+  } catch {
+    throw new Error("Can't reach the RecallAI server.");
+  }
+  if (!res?.ok) {
+    const detail = await errorDetail(res);
+    throw new Error(res?.status === 404 ? 'That person no longer exists.' : detail || 'Grok couldn’t describe them.');
+  }
+  const body = (await res.json()) as Record<string, unknown>;
+  const same = body.same_person;
+  return {
+    summary: typeof body.summary === 'string' ? body.summary : '',
+    description: typeof body.description === 'string' ? body.description : '',
+    samePerson: same === 'yes' || same === 'no' ? same : 'unsure',
+    photos: Array.isArray(body.photos) ? body.photos.filter((p): p is string => typeof p === 'string') : [],
+    savedToNotes: body.saved_to_notes === true,
+  };
+}

@@ -77,8 +77,8 @@ SpacetimeDB tables get an `owner` column (see
 | `POST /api/auth/login` `{username, password}` | none | 200 `{token, ...}`; 401 `"Incorrect username or password."` for a wrong password **and** an unknown user; 429 + `Retry-After` after 5 failures for that username within 5 minutes (60 s lockout) |
 | `POST /api/auth/logout` | Bearer | revokes this token |
 | `GET /api/auth/me` | Bearer | `{id, username, display_name, created_at, session_expires}` |
-| `/api/belongings*`, `/api/sightings*`, `/api/objects`, `/api/people*`, `/api/ask`, `/api/alerts*`, `/api/enroll*`, `GET /api/live`, `POST /api/live/people`, `POST /gps`, `GET /gps/latest` | Bearer | only the caller's data; someone else's ids behave like missing ones (404) |
-| `GET /snapshots/<file>`, `GET /api/live/frame.jpg`, `GET /api/live/stream` | Bearer **or** `?token=` | for `<img>` tags; a snapshot is only served to the owner of a sighting that references it |
+| `/api/belongings*`, `/api/sightings*`, `/api/objects`, `/api/people*`, `/api/ask`, `/api/alerts*`, `/api/enroll*`, `GET /api/live`, `POST /api/live/people`, `POST /api/people/{id}/describe`, `POST /gps`, `GET /gps/latest` | Bearer | only the caller's data; someone else's ids behave like missing ones (404) |
+| `GET /snapshots/<file>`, `GET /api/live/frame.jpg`, `GET /api/live/stream`, `GET /api/people/{id}/photos/<file>` | Bearer **or** `?token=` | for `<img>` tags; a snapshot is only served to the owner of a sighting that references it |
 | `POST /api/live`, `GET /api/device/gps` | device | the camera process (below) |
 | `/`, `/search`, `/auth.js`, `/app/` | none | pages; they sign in before calling the API |
 
