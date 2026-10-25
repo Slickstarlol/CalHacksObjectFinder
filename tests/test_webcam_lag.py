@@ -53,7 +53,8 @@ class SlowRecorder:
     def process(self, frame, detections, gps, now):
         SlowRecorder.calls += 1
         time.sleep(0.4)
-        m = SimpleNamespace(name="My Mouse", score=0.9, category="mouse")
+        m = SimpleNamespace(belonging_id="mouse1", name="My Mouse", score=0.9,
+                            category="mouse")
         return {"mouse1": (m, detections[0])}
 
     def close(self):

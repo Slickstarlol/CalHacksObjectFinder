@@ -74,6 +74,8 @@ def test_webcam_main_records_my_bottle(tmp_path, monkeypatch):
     monkeypatch.setattr(webcam.cv2, "waitKey", lambda *a: 0)
 
     class _SilentPublisher:
+        remote_enroll = None     # LivePublisher: enrollment state from the server
+
         def __init__(self, *a, **k):
             pass
 
