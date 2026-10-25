@@ -1,14 +1,17 @@
 {
-  "_comment": "RecallAI launcher steps, run top to bottom. 'enabled' is the default; your own on/off choices are saved in settings.local.json. {python}/{npm}/{spacetime} are filled in automatically. cwd is relative to the repository root.",
+  "_comment": "RecallAI launcher steps, run top to bottom. 'enabled' is the default; your own on/off choices are saved in settings.local.json. {python}/{npm}/{spacetime} are filled in automatically. cwd is relative to the repository root. Never put a secret in this file (it is in git): give its option a 'dotenv' name so it lives in .env.",
   "steps": [
     {
       "id": "check-grok",
       "name": "Check Grok key",
-      "description": "Verifies XAI_API_KEY (.env) works before anything starts. Optional.",
+      "description": "Verifies the Grok API key works before anything starts. Optional. A new key is saved as XAI_API_KEY in .env, which the server and camera use too.",
       "command": ["{python}", "-m", "recallai.ai.check_grok"],
       "cwd": ".",
       "enabled": false,
       "needs": ["python"],
+      "options": [
+        {"id": "key", "label": "API key", "dotenv": "XAI_API_KEY", "secret": true}
+      ],
       "ready": {"type": "exit"},
       "timeout": 90
     },
@@ -26,12 +29,15 @@
     {
       "id": "publish",
       "name": "Publish SpacetimeDB module",
-      "description": "Uploads spacetimedb/ as database 'calhacks-l28u4' on Maincloud (safe to repeat; keeps data).",
-      "command": ["{spacetime}", "publish", "--server", "maincloud", "--yes", "calhacks-l28u4"],
+      "description": "Uploads spacetimedb/ to the Maincloud database below, by name or identity (safe to repeat; keeps data). The default is the identity of 'calhacks-c3s7r'.",
+      "command": ["{spacetime}", "publish", "--server", "maincloud", "--yes"],
       "cwd": "spacetimedb",
       "enabled": false,
       "needs": ["spacetime", "npm"],
       "install_if_missing": "node_modules",
+      "options": [
+        {"id": "database", "label": "Maincloud database", "default": "c200c46c296d9afc334e7cdf941d2061f8e2b537ec8f82df6cd4959301e86292"}
+      ],
       "ready": {"type": "exit"},
       "timeout": 300
     },

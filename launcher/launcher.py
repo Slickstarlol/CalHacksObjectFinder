@@ -8,8 +8,9 @@
     python launcher/launcher.py --list
 
 The control panel (http://127.0.0.1:8765) has a switch per step, Start all /
-Stop all, per-step start/stop, live logs, and a dropdown on the Camera step
-to choose which camera it uses. Closing the panel tab does not stop
+Stop all, per-step start/stop, live logs, a dropdown on the Camera step
+to choose which camera it uses, a Grok API key box (saved in .env) and the
+Maincloud database to publish to. Closing the panel tab does not stop
 anything; press "Quit launcher" (or Ctrl+C in the launcher window) to stop all.
 """
 
@@ -124,7 +125,10 @@ def make_handler(runner, steps, on_quit):
                 sid, oid = body.get("id"), body.get("option")
                 if sid not in runner.by_id or oid not in runner.by_id[sid].values:
                     return self._json({"error": "unknown option"}, 404)
-                _, restarting = runner.set_option(sid, oid, body.get("value", ""))
+                try:
+                    _, restarting = runner.set_option(sid, oid, body.get("value", ""))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
                 core.save_settings(steps)
                 return self._json({**runner.state(), "restarting": restarting})
             if path.startswith("/api/step/"):

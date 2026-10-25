@@ -369,7 +369,7 @@ def test_camera_step_has_an_output_dropdown(tmp_path):
     core.save_settings(list(by.values()), settings)
     again = {s.id: s for s in core.load_steps(LAUNCHER / "steps.json", settings)}
     assert again["camera"].values == {"camera": "2"}
-    assert json.loads(settings.read_text())["options"] == {"camera": {"camera": "2"}}
+    assert json.loads(settings.read_text())["options"]["camera"] == {"camera": "2"}
 
 
 def fake_cameras(monkeypatch, tmp_path, found):
@@ -465,6 +465,108 @@ def test_panel_dropdown_api(tmp_path, monkeypatch):
         assert saved["options"] == {"camera": {"camera": "1"}}
         assert call("/api/option", {"id": "camera", "option": "x", "value": "1"})[0] == 404
         assert call("/api/option", {"id": "nope", "option": "camera", "value": "1"})[0] == 404
+    finally:
+        httpd.shutdown()
+        r.stop_all()
+
+
+# --------------------------------------------------------------- text boxes: Grok key, Maincloud database
+GROK_KEY = "xai-" + "a1b2c3d4" * 8   # fake
+DEFAULT_DB = "c200c46c296d9afc334e7cdf941d2061f8e2b537ec8f82df6cd4959301e86292"
+
+
+def test_grok_key_lives_in_dotenv_not_in_settings(tmp_path):
+    env_file, settings = tmp_path / ".env", tmp_path / "settings.local.json"
+    env_file.write_text("# mine\nOTHER=1\nXAI_API_KEY=xai-old-key-0000000000\n")
+    steps = core.load_steps(LAUNCHER / "steps.json", settings, env_file)
+    grok = {s.id: s for s in steps}["check-grok"]
+    assert grok.values == {"key": "xai-old-key-0000000000"}
+    assert grok.public()["options"] == [   # the panel gets a hint, never the key
+        {"id": "key", "label": "API key", "choices": None, "value": "",
+         "dotenv": "XAI_API_KEY", "secret": True, "hint": "xai-old-…0000"}]
+    r = runner_for(steps, tmp_path, env_file=env_file)
+    assert r._expand(grok) == [PY, "-m", "recallai.ai.check_grok"]   # not on the command line
+
+    r.set_option("check-grok", "key", f"  {GROK_KEY}\n")
+    assert env_file.read_text() == f"# mine\nOTHER=1\nXAI_API_KEY={GROK_KEY}\n"
+    core.save_settings(steps, settings)
+    assert GROK_KEY not in settings.read_text()
+    assert "check-grok" not in json.loads(settings.read_text())["options"]
+    assert GROK_KEY not in json.dumps(r.state())
+    again = {s.id: s for s in core.load_steps(LAUNCHER / "steps.json", settings, env_file)}
+    assert again["check-grok"].values == {"key": GROK_KEY}
+
+    for bad in ("", "two words", "--flag", "xai-1\nOTHER=2"):
+        with pytest.raises(ValueError):
+            r.set_option("check-grok", "key", bad)
+    assert core.read_dotenv(env_file) == {"OTHER": "1", "XAI_API_KEY": GROK_KEY}
+
+
+def test_saved_grok_key_beats_an_old_one_in_the_shell(tmp_path, monkeypatch):
+    out = tmp_path / "key.txt"
+    s = step("check", [PY, "-c", f"import os;open({str(out)!r},'w').write(os.environ.get('XAI_API_KEY','<none>'))"])
+    s.options = [{"id": "key", "label": "API key", "dotenv": "XAI_API_KEY", "secret": True}]
+    s.values = {"key": ""}
+    monkeypatch.setenv("XAI_API_KEY", "xai-old-from-setx")
+    r = runner_for([s], tmp_path, env_file=tmp_path / ".env")
+    assert r.run_sequence() and out.read_text() == "xai-old-from-setx"   # nothing saved yet
+    r.set_option("check", "key", GROK_KEY)
+    assert r.run_sequence() and out.read_text() == "<none>"   # so the backend reads .env
+
+
+def test_publish_step_uploads_to_the_chosen_database(tmp_path):
+    settings, env_file = tmp_path / "settings.local.json", tmp_path / ".env"
+    steps = core.load_steps(LAUNCHER / "steps.json", settings, env_file)
+    pub = {s.id: s for s in steps}["publish"]
+    r = runner_for(steps, tmp_path, env_file=env_file)
+    r.tools.update(spacetime="spacetime", npm="npm")
+    assert r._expand(pub) == ["spacetime", "publish", "--server", "maincloud", "--yes", DEFAULT_DB]
+
+    r.set_option("publish", "database", "my-db")
+    assert r._expand(pub)[-1] == "my-db"
+    core.save_settings(steps, settings)
+    again = {s.id: s for s in core.load_steps(LAUNCHER / "steps.json", settings, env_file)}
+    assert again["publish"].values == {"database": "my-db"}
+
+    with pytest.raises(ValueError):
+        r.set_option("publish", "database", "--delete-data")   # never a flag
+    r.set_option("publish", "database", "  ")                  # empty: back to the default
+    assert r._expand(pub)[-1] == DEFAULT_DB
+    pub.values["database"] = ""
+    with pytest.raises(ValueError):                             # never publish without one
+        r._expand(pub)
+
+
+def test_panel_text_box_api(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "SETTINGS_FILE", tmp_path / "settings.local.json")
+    env_file = tmp_path / ".env"
+    steps = core.load_steps(LAUNCHER / "steps.json", tmp_path / "none.json", env_file)
+    r = runner_for(steps, tmp_path, env_file=env_file)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), launcher_mod.make_handler(r, steps, lambda: None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_port}"
+
+    def call(path, body):
+        req = Request(base + path, data=json.dumps(body).encode(), method="POST")
+        try:
+            with urlopen(req, timeout=10) as resp:
+                return resp.status, json.loads(resp.read())
+        except Exception as e:
+            return e.code, json.loads(e.read())
+    try:
+        code, st = call("/api/option", {"id": "check-grok", "option": "key", "value": GROK_KEY})
+        assert code == 200 and GROK_KEY not in json.dumps(st)
+        assert core.read_dotenv(env_file)["XAI_API_KEY"] == GROK_KEY
+        grok = next(s for s in st["steps"] if s["id"] == "check-grok")
+        assert grok["options"][0]["hint"] == core.mask(GROK_KEY)
+
+        code, st = call("/api/option", {"id": "publish", "option": "database", "value": "--delete-data"})
+        assert code == 400 and "can't start with '-'" in st["error"]
+        code, st = call("/api/option", {"id": "publish", "option": "database", "value": "my-db"})
+        assert code == 200
+        saved = (tmp_path / "settings.local.json").read_text()
+        assert json.loads(saved)["options"]["publish"] == {"database": "my-db"}
+        assert GROK_KEY not in saved
     finally:
         httpd.shutdown()
         r.stop_all()

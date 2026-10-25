@@ -8,10 +8,14 @@ Each step (see steps.json) is a command plus a way to know it is ready:
 Steps run strictly in order: the next starts only when the previous is ready.
 If a step fails, the remaining steps are skipped and nothing else is started.
 
-A step can have options (a dropdown in the panel), e.g. which camera the
-Camera step uses: {"id", "label", "flag", "default", "choices"}. The chosen
-value is passed as `flag value` and remembered in settings.local.json;
-"choices" names a list the launcher can look up (CHOICE_COMMANDS).
+A step can have options: a dropdown in the panel when "choices" names a list
+the launcher can look up (CHOICE_COMMANDS, e.g. which camera the Camera step
+uses), otherwise a text box. {"id", "label", "flag", "default", "choices",
+"dotenv", "secret"}. The chosen value is passed as `flag value`, or as a plain
+argument when there is no flag, and remembered in settings.local.json.
+"dotenv": NAME keeps the value in the repo's .env as NAME=value instead (the
+backend reads it from there; nothing is passed on the command line), e.g. the
+Grok API key. "secret": the panel only ever gets a masked hint of the value.
 
 Pure standard library so it runs with any Python and freezes into an .exe.
 """
@@ -44,6 +48,15 @@ REPO_ROOT = LAUNCHER_DIR.parent
 STEPS_FILE = LAUNCHER_DIR / "steps.json"
 SETTINGS_FILE = LAUNCHER_DIR / "settings.local.json"   # your toggles (git-ignored)
 LOG_DIR = LAUNCHER_DIR / "logs"
+
+
+def env_file_path(repo_root=REPO_ROOT):
+    """The .env the backend reads (same rule as backend/recallai/paths.py)."""
+    override = os.environ.get("RECALLAI_ENV_FILE", "").strip()
+    return Path(override).expanduser().resolve() if override else Path(repo_root) / ".env"
+
+
+ENV_FILE = env_file_path()   # secrets such as XAI_API_KEY (git-ignored)
 
 # Lists a dropdown can offer, each printed as JSON by a backend command.
 # cameras: [{"index": 0, "width": 1280, "height": 720}, ...]
@@ -92,6 +105,52 @@ def find_tool(name):
 def tool_paths():
     return {"python": find_python(), "npm": find_tool("npm"),
             "spacetime": find_tool("spacetime")}
+
+
+# ---------------------------------------------------------------------------
+# .env: KEY=value lines, read the same way as backend/recallai/ai/llm.py
+# ---------------------------------------------------------------------------
+def _dotenv_key(line):
+    line = line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        return None
+    return line.split("=", 1)[0].strip().removeprefix("export ").strip()
+
+
+def read_dotenv(path):
+    """{KEY: value}; the first non-empty value of a key wins, as in the backend."""
+    values = {}
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig")   # tolerate Notepad's BOM
+    except OSError:
+        return values
+    for line in text.splitlines():
+        key = _dotenv_key(line)
+        value = line.split("=", 1)[1].strip().strip('"').strip("'") if key else ""
+        if key and value:
+            values.setdefault(key, value)
+    return values
+
+
+def write_dotenv(path, key, value):
+    """Set KEY=value (replacing its first line, if any), keeping every other line."""
+    path = Path(path)
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except FileNotFoundError:
+        lines = []
+    for i, line in enumerate(lines):
+        if _dotenv_key(line) == key:
+            lines[i] = f"{key}={value}"
+            break
+    else:
+        lines.append(f"{key}={value}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def mask(secret):
+    """Enough of a secret to recognise it, not to use it (check_grok prints the same)."""
+    return f"{secret[:8]}…{secret[-4:]}" if len(secret) > 16 else ("•" * 8 if secret else "")
 
 
 # ---------------------------------------------------------------------------
@@ -173,22 +232,43 @@ class Step:
             "pid": self.pid, "open_url": self.open_url,
             "command": " ".join(self.command), "cwd": self.cwd,
             "kind": self.ready.get("type"), "log_count": self.log_count,
-            "options": [{"id": o["id"], "label": o.get("label", o["id"]),
-                         "choices": o.get("choices"), "value": self.values.get(o["id"], "")}
-                        for o in self.options],
+            "options": [self._public_option(o) for o in self.options],
         }
 
+    def _public_option(self, o):
+        value = self.values.get(o["id"], "")
+        out = {"id": o["id"], "label": o.get("label", o["id"]),
+               "choices": o.get("choices"), "value": value}
+        if o.get("dotenv"):
+            out["dotenv"] = o["dotenv"]
+        if o.get("secret"):   # the panel gets a hint, never the secret itself
+            out.update(value="", secret=True, hint=mask(value))
+        return out
+
     def option_args(self):
-        """[flag, value, ...] for every option with a value."""
+        """[flag, value, ...] for every option with a value; a plain argument
+        when there is no flag (required); nothing for values kept in .env."""
         args = []
         for o in self.options:
             value = str(self.values.get(o["id"], "")).strip()
-            if value and o.get("flag"):
-                args += [o["flag"], value]
+            if o.get("dotenv"):
+                continue
+            if o.get("flag"):
+                if value:
+                    args += [o["flag"], value]
+            elif value:
+                args.append(value)
+            else:
+                raise ValueError(f"{o.get('label', o['id'])} is empty")
         return args
 
+    def saved_values(self):
+        """Option values for settings.local.json (values kept in .env are left out)."""
+        return {o["id"]: self.values.get(o["id"], "") for o in self.options
+                if not o.get("dotenv")}
 
-def load_steps(steps_file=None, settings_file=None):
+
+def load_steps(steps_file=None, settings_file=None, env_file=None):
     steps_file = steps_file or STEPS_FILE
     settings_file = settings_file or SETTINGS_FILE
     data = json.loads(Path(steps_file).read_text(encoding="utf-8"))
@@ -197,15 +277,18 @@ def load_steps(steps_file=None, settings_file=None):
     ids = [s.id for s in steps]
     if len(set(ids)) != len(ids):
         raise ValueError("duplicate step ids in steps.json")
+    dotenv = read_dotenv(env_file or ENV_FILE)
     for s in steps:
-        s.values = {o["id"]: str(o.get("default", "")) for o in s.options}
+        s.values = {o["id"]: dotenv.get(o["dotenv"], "") if o.get("dotenv")
+                    else str(o.get("default", "")) for o in s.options}
     try:
         saved = json.loads(Path(settings_file).read_text(encoding="utf-8"))
         for s in steps:
             if s.id in saved.get("enabled", {}):
                 s.enabled = bool(saved["enabled"][s.id])
+            keep = s.saved_values()
             for oid, value in (saved.get("options", {}).get(s.id) or {}).items():
-                if oid in s.values:
+                if oid in keep and str(value).strip():
                     s.values[oid] = str(value)
     except (OSError, ValueError, AttributeError):
         pass
@@ -215,10 +298,11 @@ def load_steps(steps_file=None, settings_file=None):
 
 
 def save_settings(steps, settings_file=None):
+    options = {s.id: s.saved_values() for s in steps}
     try:
         Path(settings_file or SETTINGS_FILE).write_text(json.dumps(
             {"enabled": {s.id: s.enabled for s in steps},
-             "options": {s.id: s.values for s in steps if s.values}}, indent=2),
+             "options": {sid: v for sid, v in options.items() if v}}, indent=2),
             encoding="utf-8")
     except OSError:
         pass
@@ -229,11 +313,12 @@ def save_settings(steps, settings_file=None):
 # ---------------------------------------------------------------------------
 class Runner:
     def __init__(self, steps, repo_root=REPO_ROOT, log_dir=LOG_DIR, tools=None,
-                 poll=0.5, opener=None, env=None):
+                 poll=0.5, opener=None, env=None, env_file=None):
         self.steps = steps
         self.by_id = {s.id: s for s in steps}
         self.repo_root = Path(repo_root)
         self.log_dir = Path(log_dir)
+        self.env_file = Path(env_file) if env_file else env_file_path(self.repo_root)
         self.tools = tools if tools is not None else tool_paths()
         self.poll = poll
         self.opener = opener                 # callable(url) to open a browser tab
@@ -282,6 +367,12 @@ class Runner:
         env["PYTHONIOENCODING"] = "utf-8"
         env["FORCE_COLOR"] = "0"
         env["NO_COLOR"] = "1"
+        # A value saved in .env from the panel beats an older one in the shell
+        # (the backend lets a real environment variable override .env).
+        for s in self.steps:
+            for o in s.options:
+                if o.get("dotenv") and s.values.get(o["id"]):
+                    env.pop(o["dotenv"], None)
         env.update(self.extra_env)
         return env
 
@@ -331,7 +422,7 @@ class Runner:
             self._set(step, "starting", " ".join(argv))
             step.proc = self._spawn(step, argv, cwd)
             step.pid, step.started_at = step.proc.pid, time.time()
-        except (OSError, FileNotFoundError) as e:
+        except (OSError, ValueError) as e:
             self._set(step, "failed", str(e))
             return False
 
@@ -479,11 +570,25 @@ class Runner:
         return {"choices": listed, "error": None}
 
     def set_option(self, step_id, option_id, value):
-        """Choose a dropdown value. A running step restarts to use it."""
+        """Choose an option value (empty = the default). A running step restarts
+        to use it; a "dotenv" value is written to .env. Raises ValueError for a
+        value that can't be used."""
         s = self.by_id[step_id]
         if option_id not in s.values:
             raise KeyError(option_id)
-        value = str(value).strip()
+        o = next(o for o in s.options if o["id"] == option_id)
+        label = o.get("label", option_id)
+        value = str(value).strip() or str(o.get("default", ""))
+        if not value:
+            raise ValueError(f"{label} can't be empty")
+        # One command-line argument / one .env line: no flags, spaces or newlines.
+        if value.startswith("-") or any(c.isspace() for c in value):
+            raise ValueError(f"{label} can't start with '-' or contain spaces")
+        if o.get("dotenv"):
+            try:
+                write_dotenv(self.env_file, o["dotenv"], value)
+            except OSError as e:
+                raise ValueError(f"couldn't save {self.env_file}: {e}") from e
         with self.lock:
             changed = s.values[option_id] != value
             s.values[option_id] = value

@@ -22,6 +22,18 @@ panel opens in your browser at http://127.0.0.1:8765:
 - The **Camera** step has an **Output** dropdown listing the cameras on this
   computer (↻ looks again). The choice is passed as `--camera N` and
   remembered; changing it while the camera runs restarts it.
+- The **Check Grok key** step has an **API key** box: paste a new xAI key and
+  **Save**. It is written to `XAI_API_KEY` in `.env` at the repo root
+  (git-ignored), which the server and camera read too, and it beats an older
+  `XAI_API_KEY` set in your shell for everything the launcher starts. The panel
+  only shows its first and last characters. A running server or camera keeps the
+  old key until you restart it.
+- The **Publish SpacetimeDB module** step has a **Maincloud database** box: the
+  database name or identity `spacetime publish` uploads to (default
+  `c200c46c…6292`, the identity of `calhacks-c3s7r`). Remembered like the
+  switches; clearing it and saving goes back to the default. The server and
+  live dashboard still use `SPACETIME_DB` / `VITE_SPACETIMEDB_DB_NAME`
+  (default `calhacks-l28u4`), not this box.
 - Something already running (e.g. you started the server yourself) is detected
   and not started twice.
 - First run of a dashboard runs `npm install` automatically.
@@ -50,6 +62,10 @@ Set `RECALLAI_PYTHON` to pick a specific Python.
 ## Adding or changing steps
 Edit `steps.json`. Each step has a `command` (`{python}`, `{npm}`, `{spacetime}`
 are filled in), a `cwd` relative to the repo root, optional `options`
-(dropdowns: `{"id", "label", "flag", "default", "choices"}`), and a `ready` check:
+(`{"id", "label", "flag", "default", "choices", "dotenv", "secret"}`: a dropdown
+when `choices` names a list, otherwise a text box; passed as `flag value`, or as
+a plain argument without a flag; `"dotenv": "NAME"` keeps the value in `.env`
+instead of passing it, `"secret": true` never sends it back to the panel; never
+put a secret's value in `steps.json`, it is in git), and a `ready` check:
 `{"type": "http", "url": ...}`, `{"type": "port", "port": ...}`,
 `{"type": "exit"}` (one-shot) or `{"type": "alive", "seconds": N}`.
