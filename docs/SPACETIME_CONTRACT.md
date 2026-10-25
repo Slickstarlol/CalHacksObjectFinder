@@ -151,8 +151,8 @@ and only return that user's data.
 ## Two dashboards
 - `frontend/dashboard/` (JSX, polls FastAPI): live camera, enrollment, people editor. Dev server `:5173`.
 - `frontend/live-dashboard/` (TS, live SpacetimeDB subscription): belongings, sightings, alerts, people (rename by double-click), Grok chat,
-  plus a live camera panel that polls `GET /api/live` (boxes, scores) and `/api/live/frame.jpg`; double-click a
-  person there to name them (`POST /api/live/people`).
+  plus a live camera panel that polls `GET /api/live` (boxes, scores) and `/api/live/frame.jpg`; double-click a person's
+  row under "What's happening" to name them (`POST /api/live/people`).
   Dev server `:5174`; built copy served by FastAPI at `/app/`.
 Both proxy `/api` and `/snapshots` to `:8000`; FastAPI's CORS allows both dev origins.
 

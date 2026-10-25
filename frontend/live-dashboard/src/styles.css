@@ -2280,49 +2280,31 @@ button.thumb {
 
 /* ---------- small screens ---------- */
 /* ---------- people on the live feed ---------- */
-/* Tags sit on the camera picture, so they stay dark in both themes. */
+/* Read-only name tags on the camera picture (people are named from their
+   row in "What's happening"). Tags sit on the photo, so they stay dark in
+   both themes. */
 .lock-person {
-  --b: var(--violet);
-  cursor: pointer;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
+  pointer-events: none;
 }
 .lock-person .brackets {
   --b: light-dark(#8f7bff, #b6a9ff);
 }
 .lock-person .lock-tag {
   background: color-mix(in srgb, #2a1f6b 88%, transparent);
-  transition: background 160ms var(--ease), color 160ms var(--ease), transform 220ms var(--spring);
+  transition: background 160ms var(--ease), color 160ms var(--ease);
 }
-.lock-unnamed .brackets {
-  --b: rgb(255 255 255 / 85%);
-  opacity: 0.85;
-}
-.lock-unnamed .lock-tag {
-  background: rgb(8 20 30 / 72%);
-  font-weight: 500;
-}
-.lock-person:hover,
-.lock-person:focus-visible {
+/* The person whose row is hovered or being named. */
+.lock-person.is-focus {
   z-index: 4;
-  outline: 1.5px dashed light-dark(#8f7bff, #b6a9ff);
+  outline: 1.5px dashed #fff3b0;
   outline-offset: 0;
 }
-.tag-hint,
-.lock-person:hover .tag-idle,
-.lock-person:focus-visible .tag-idle {
-  display: none;
+.lock-person.is-focus .brackets {
+  --b: #fff3b0;
 }
-.lock-person:hover .tag-hint,
-.lock-person:focus-visible .tag-hint {
-  display: inline;
-}
-/* Same yellow as renaming a name in the People panel. */
-.lock-person:hover .lock-tag,
-.lock-person:focus-visible .lock-tag {
+.lock-person.is-focus .lock-tag {
   background: #fff3b0;
   color: #3a2e00;
-  transform: translateY(-1px);
 }
 .lock-learning .lock-tag {
   animation: learning 1.2s ease-in-out infinite;
@@ -2332,52 +2314,32 @@ button.thumb {
     opacity: 0.55;
   }
 }
-.name-pop {
-  position: absolute;
-  z-index: 6;
+/* Same yellow as renaming a name in the People panel. */
+.event-person:hover .event-title,
+.event-person:focus-visible .event-title {
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bubble-hover);
+  box-shadow: inset 0 0 0 1px var(--bubble-hover-border);
 }
-.name-pop .brackets {
-  --b: #fff3b0;
+.event-editing {
+  animation: none;
 }
-.name-pop .name-input {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: max-content;
-  min-width: 150px;
-  max-width: 220px;
-  font-size: 13px;
-  animation: pop-in 220ms var(--spring) both;
+.event-row-editing {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--bubble-hover-border);
 }
-@keyframes pop-in {
-  from {
-    transform: scale(0.85);
-    opacity: 0;
-  }
+.event-row-editing .name-input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  font-size: 14px;
 }
-.scene-toast {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  z-index: 6;
-  width: max-content;
-  max-width: calc(100% - 20px);
-  padding: 7px 12px;
-  border-radius: var(--radius-sm);
-  background: rgb(8 20 30 / 86%);
-  color: #fff;
-  font-size: 13px;
-  transform: translateX(-50%);
-  animation: toast-in 260ms var(--spring) both;
-}
-.scene-toast-error {
-  background: color-mix(in srgb, #8c1d0c 92%, transparent);
-}
-@keyframes toast-in {
-  from {
-    transform: translate(-50%, -8px);
-    opacity: 0;
-  }
+.live-notice {
+  margin: 0 4px 6px;
+  padding: 7px 10px;
+  animation: event-in 400ms var(--spring) both;
 }
 
 /* ---------- light / dark toggle ---------- */

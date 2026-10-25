@@ -273,7 +273,7 @@ describe('Dashboard', () => {
       expect(screen.getByRole('dialog', { name: 'My Laptop' })).toBeInTheDocument();
     });
 
-    it('lists what is happening: yours in view, missing items, people and other objects', () => {
+    it('lists what is happening: yours in view, missing items, each person and other objects', () => {
       setup({ camera: online });
       const panel = screen.getByRole('region', { name: /Live feed/ });
       const rows = within(panel).getAllByRole('listitem').filter(li => li.classList.contains('event'));
@@ -282,51 +282,58 @@ describe('Dashboard', () => {
       expect(text[1]).toMatch(/^In viewMy Bag.*86\.1%/);
       expect(text[2]).toMatch(/^MissingWater BottleOut of view since/);
       expect(text[3]).toMatch(/^PersonChawinRecognized from the photos you named.*83\.0%/);
-      expect(text[4]).toMatch(/^Person2 more people in view/);
-      // laptop/backpack YOLO boxes are the recognized belongings, so they aren't repeated as objects
-      expect(text.some(t => /Objectlaptop|Objectbackpack/.test(t ?? ''))).toBe(false);
-      expect(text[5]).toMatch(/^Objectbottle/);
+      // One row per unnamed person, numbered left to right.
+      expect(text[4]).toMatch(/^PersonPerson 1Detected, not identified.*71\.0%/);
+      expect(text[5]).toMatch(/^PersonPerson 2Detected, not identified.*84\.0%/);
+      // No room left: the other objects share a row (laptop/backpack are your belongings, so not repeated).
+      expect(text[6]).toMatch(/^Objectsbottle, 2 × chairNot your belongings/);
+      expect(text).toHaveLength(7);
       expect(within(panel).getByText('8 tracked · 3 people')).toBeInTheDocument();
       expect(within(panel).getByText('match 88.7%')).toBeInTheDocument();
     });
 
-    it('names a person on double-click; the camera then recognizes them', async () => {
+    it('names a person by double-clicking their row; the picture only shows names', async () => {
       let resolve!: (r: LabelResult) => void;
       const onLabelPerson = vi.fn((_bbox: Box, _name: string) => new Promise<LabelResult>(r => (resolve = r)));
       const { rerender, props } = setup({ camera: online, people: makePeople(NOW), onLabelPerson, onRenamePerson: vi.fn() });
       const panel = screen.getByRole('region', { name: /Live feed/ });
-      expect(within(panel).getByRole('button', { name: 'Chawin in view, press Enter to rename' })).toHaveTextContent(
-        'Chawin 83%'
-      );
-      const strangers = within(panel).getAllByRole('button', { name: 'Unnamed person in view, press Enter to name them' });
-      expect(strangers).toHaveLength(2);
-      expect(strangers[0]).toHaveTextContent('Who?');
-      // Only people get name boxes on the picture, never objects.
       const scene = panel.querySelector<HTMLElement>('.live-scene')!;
-      expect(within(scene).getAllByRole('button').map(b => b.getAttribute('aria-label'))).not.toContainEqual(
-        expect.stringMatching(/chair|bottle/i)
-      );
+      // Nothing on the camera picture is editable: its only buttons are your belongings.
+      expect(within(scene).getByText('Chawin 83%')).toBeInTheDocument();
+      expect(within(scene).queryByText(/Who\?|Person \d/)).toBeNull();
+      for (const b of within(scene).getAllByRole('button')) expect(b).toHaveAccessibleName(/Open its history$/);
 
-      await userEvent.dblClick(strangers[0]);
+      const personRow = () =>
+        within(panel).getByRole('button', { name: 'Person 2 in view, not named yet. Press Enter to name them' });
+      // Hovering a row outlines that person on the picture.
+      await userEvent.hover(personRow());
+      expect(within(scene).getByText('Person 2')).toBeInTheDocument();
+      expect(scene.querySelector('.is-focus')).toHaveStyle({ left: `${(62 / 640) * 100}%` });
+
+      await userEvent.dblClick(personRow());
       await userEvent.keyboard('{Escape}');
       expect(within(panel).queryByRole('textbox')).toBeNull();
       expect(onLabelPerson).not.toHaveBeenCalled();
 
-      await userEvent.dblClick(strangers[0]);
-      await userEvent.type(within(panel).getByRole('textbox', { name: 'Name this person' }), 'Maya{Enter}');
+      await userEvent.dblClick(personRow());
+      await userEvent.type(within(panel).getByRole('textbox', { name: 'Name Person 2' }), 'Maya{Enter}');
       expect(onLabelPerson).toHaveBeenCalledWith([62, 232, 112, 285], 'Maya');
       await act(async () => resolve({ personId: 9, name: 'Maya', created: true, bbox: [62, 232, 112, 285] }));
-      expect(within(panel).getByText('Maya · learning…')).toBeInTheDocument();
+      expect(within(scene).getByText('Maya · learning…')).toBeInTheDocument();
+      expect(within(panel).getByRole('button', { name: 'Maya in view, press Enter to rename' })).toHaveTextContent(
+        'Learning… the camera is saving a photo'
+      );
 
       const maya = { personId: 9, name: 'Maya', score: 0.8, bbox: [62, 232, 112, 285] as Box };
       rerender(<Dashboard {...props} camera={{ ...online, people: [...online.people, maya] }} />);
+      expect(within(scene).getByText('Maya 80%')).toBeInTheDocument();
       expect(within(panel).getByRole('button', { name: 'Maya in view, press Enter to rename' })).toHaveTextContent(
-        'Maya 80%'
+        'Recognized from the photos you named'
       );
-      expect(within(panel).getAllByRole('button', { name: /Unnamed person/ })).toHaveLength(1);
+      expect(within(panel).getAllByRole('button', { name: /not named yet/ })).toHaveLength(1);
     });
 
-    it('renames a recognized person, or relabels the box with another of your people', async () => {
+    it('renames a recognized person from their row, or relabels them as another of your people', async () => {
       const onRenamePerson = vi.fn(() => Promise.resolve());
       const onLabelPerson = vi.fn(async (bbox: Box, name: string, personId?: number) => ({
         personId: personId!,
@@ -344,7 +351,7 @@ describe('Dashboard', () => {
       expect(onRenamePerson).toHaveBeenCalledWith(expect.objectContaining({ id: 1n }), 'Chawin M.');
       const renamed = within(panel).getByRole('button', { name: 'Chawin M. in view, press Enter to rename' });
 
-      // "mom" is another of your people: the box is Mom, Chawin keeps his name.
+      // "mom" is another of your people: that box is Mom, Chawin keeps his name.
       await userEvent.dblClick(renamed);
       const again = within(panel).getByRole('textbox', { name: 'New name for Chawin M.' });
       await userEvent.clear(again);
@@ -358,15 +365,16 @@ describe('Dashboard', () => {
       const onLabelPerson = vi.fn(() => Promise.reject(new Error('That person isn’t in view any more.')));
       const { unmount } = setup({ camera: online, people: makePeople(NOW), onLabelPerson });
       let panel = screen.getByRole('region', { name: /Live feed/ });
-      await userEvent.dblClick(within(panel).getAllByRole('button', { name: /Unnamed person/ })[1]);
-      await userEvent.type(within(panel).getByRole('textbox', { name: 'Name this person' }), 'Sam{Enter}');
+      await userEvent.dblClick(within(panel).getByRole('button', { name: /^Person 1 in view/ }));
+      await userEvent.type(within(panel).getByRole('textbox', { name: 'Name Person 1' }), 'Sam{Enter}');
       expect(await within(panel).findByRole('alert')).toHaveTextContent('That person isn’t in view any more.');
       expect(within(panel).queryByText(/Sam/)).toBeNull();
       unmount();
 
       setup({ camera: online, people: makePeople(NOW) });
       panel = screen.getByRole('region', { name: /Live feed/ });
-      expect(within(panel).queryByRole('button', { name: /Unnamed person|to rename/ })).toBeNull();
+      expect(within(panel).queryByRole('button', { name: /not named yet|to rename/ })).toBeNull();
+      expect(within(panel).getByText('Person 1')).toBeInTheDocument();
       expect(within(panel).getByText('Chawin 83%')).toBeInTheDocument();
     });
 
