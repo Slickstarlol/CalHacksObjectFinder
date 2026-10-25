@@ -53,6 +53,22 @@ def photos_of(person_id, base_dir=None):
     return _references(person_folder(person_id, base_dir))[::-1]
 
 
+def headshot_jpeg(path, size=160):
+    """A square head-and-shoulders JPEG from a whole-body photo: the top
+    width x width of it (the centre square if the photo is wider than tall),
+    scaled to `size`. None if the file can't be read."""
+    img = cv2.imread(str(path))
+    if img is None or not img.size:
+        return None
+    h, w = img.shape[:2]
+    side = min(w, h)
+    x = (w - side) // 2
+    square = img[0:side, x:x + side]
+    square = cv2.resize(square, (size, size), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", square, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return buf.tobytes() if ok else None
+
+
 def save_reference(person_id, crop_bgr, base_dir=None, keep=MAX_REFERENCES):
     """Store one crop of a person and drop the oldest beyond `keep`."""
     folder = person_folder(person_id, base_dir)

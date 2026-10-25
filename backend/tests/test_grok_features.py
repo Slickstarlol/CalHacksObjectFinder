@@ -456,3 +456,29 @@ def test_grok_describes_a_person_from_their_photos(tmp_path, monkeypatch):
     monkeypatch.setattr(server.agent, "client", None)
     assert api.post(url, json={"refresh": True}).status_code == 503
     assert api.post(url, json={}).json()["summary"] == "Blue coat"   # cache still answers
+
+
+# ----- names: renames keep old names as aliases; the name is context for Khris
+def test_renamed_belonging_found_by_old_name_and_listed_with_it(tools, world):
+    from recallai.vision.recognition import set_name
+    assert set_name(world.dir / "mouse1", "Kent's Logitech Mouse") == "My Mouse"
+    with dbmod.connect() as db:
+        assert tools._resolve(db, "my mouse") == ["mouse1"]          # old name
+        assert tools._resolve(db, "logitech") == ["mouse1"]          # new name
+    items = {i["id"]: i for i in json.loads(tools.tool_list_belongings())}
+    assert items["mouse1"]["name"] == "Kent's Logitech Mouse"
+    assert items["mouse1"]["also_called"] == ["My Mouse"]
+    assert "also_called" not in items["bag1"]
+
+
+def test_khris_is_told_names_carry_context():
+    assert "You are Khris" in agentmod.SYSTEM
+    assert "colour, brand" in agentmod.SYSTEM and "also_called" in agentmod.SYSTEM
+
+
+def test_interpreter_uses_the_name_as_a_clue(world):
+    client = FakeClient(interp_reply())
+    Interpreter(client=client, belongings_dir=world.dir, owner="Kent").process(world.ids["seen"])
+    text = client.calls[0]["input"][0]["content"][-1]["text"]
+    assert text.startswith("You are Khris")
+    assert 'chose the name "My Mouse" themselves' in text and "clue" in text

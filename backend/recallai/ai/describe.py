@@ -47,7 +47,7 @@ TOOL = function_tool(
     },
 )
 
-PROMPT = """You are the visual memory of RecallAI. {owner} named this person "{name}"{relationship} on the live camera.
+PROMPT = """You are Khris, the visual memory of RecallAI. {owner} named this person "{name}"{relationship} on the live camera.
 The images are camera crops saved when they were named, newest first.
 
 Describe what {name} looks like so {owner} can spot them in a crowded room: clothing and colours, hair, glasses or hats, bags or anything they carry. Only describe what is visible.

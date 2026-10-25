@@ -44,6 +44,112 @@ const card = (name: string) =>
   screen.getAllByTestId('belonging-card').find(c => within(c).queryByRole('heading', { name }))!;
 
 describe('Dashboard', () => {
+  describe('renaming belongings', () => {
+    it('renames from the pencil, shows the new name at once, and saves it', async () => {
+      const onRenameBelonging = vi.fn(async () => {});
+      setup({ onRenameBelonging });
+      await userEvent.click(screen.getByRole('button', { name: 'Rename My Laptop' }));
+      const input = screen.getByRole('textbox', { name: 'New name for My Laptop' });
+      await userEvent.clear(input);
+      await userEvent.type(input, "Kent's work laptop{Enter}");
+      expect(onRenameBelonging).toHaveBeenCalledWith(expect.any(String), "Kent's work laptop");
+      expect(screen.getByRole('button', { name: /^Kent's work laptop\. Press Enter/ })).toBeInTheDocument();
+    });
+
+    it('renames on double-click or F2, Escape cancels, and a single click still opens history', async () => {
+      const onRenameBelonging = vi.fn(async () => {});
+      setup({ onRenameBelonging });
+      const name = screen.getByRole('button', { name: /^My Laptop\. Press Enter/ });
+      await userEvent.dblClick(name);
+      await userEvent.keyboard('{Escape}');
+      expect(onRenameBelonging).not.toHaveBeenCalled();
+
+      screen.getByRole('button', { name: /^My Laptop\. Press Enter/ }).focus();
+      await userEvent.keyboard('{F2}');
+      expect(screen.getByRole('textbox', { name: 'New name for My Laptop' })).toBeInTheDocument();
+      await userEvent.keyboard('{Escape}');
+
+      await userEvent.click(screen.getByRole('button', { name: /^My Laptop\. Press Enter/ }));
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('puts the old name back and says why when saving fails', async () => {
+      const onRenameBelonging = vi.fn(async () => {
+        throw new Error('That belonging no longer exists.');
+      });
+      setup({ onRenameBelonging });
+      await userEvent.click(screen.getByRole('button', { name: 'Rename My Laptop' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'New name for My Laptop' }), ' 2{Enter}');
+      expect(await screen.findByRole('alert')).toHaveTextContent('no longer exists');
+      expect(screen.getByRole('button', { name: /^My Laptop\. Press Enter/ })).toBeInTheDocument();
+    });
+  });
+
+  describe('adding belongings', () => {
+    it('starts adding with the + button and shows progress', async () => {
+      const start = vi.fn(async () => {});
+      const cancel = vi.fn(async () => {});
+      const { rerender, props } = setup({ enroll: { state: null, error: null, start, cancel } });
+      await userEvent.click(screen.getByRole('button', { name: 'Add a belonging with the camera' }));
+      expect(start).toHaveBeenCalled();
+
+      const state = { active: true, phase: 'turn', message: 'Turn the cup. 2 of 3 saved.', name: 'cup', saved: 2, needed: 3 };
+      rerender(<Dashboard {...props} enroll={{ state, error: null, start, cancel }} />);
+      expect(screen.getByText('Adding cup')).toBeInTheDocument();
+      expect(screen.getByLabelText('2 of 3 angles saved')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Add a belonging with the camera' })).toBeDisabled();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(cancel).toHaveBeenCalled();
+
+      rerender(<Dashboard {...props} enroll={{ state: { ...state, active: false, phase: 'done', saved: 3 }, error: null, start, cancel }} />);
+      expect(screen.getByText('cup added')).toBeInTheDocument();
+    });
+  });
+
+  describe('deleting belongings', () => {
+    it('has no trash button without a delete handler', () => {
+      setup();
+      expect(screen.queryByRole('button', { name: 'Select belongings to delete' })).not.toBeInTheDocument();
+    });
+
+    it('selects cards with the trash button, confirms, deletes and hides them', async () => {
+      const onDeleteBelongings = vi.fn(async (ids: string[]) => ids);
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      setup({ onDeleteBelongings });
+      const before = screen.getAllByTestId('belonging-card').length;
+      await userEvent.click(screen.getByRole('button', { name: 'Select belongings to delete' }));
+      const del = screen.getByRole('button', { name: /^Delete/ });
+      expect(del).toBeDisabled();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Select My Laptop' }));
+      expect(screen.getByRole('button', { name: 'Unselect My Laptop' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /^Delete 1/ }));
+
+      expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/^Delete My Laptop\?/));
+      expect(onDeleteBelongings).toHaveBeenCalledWith([expect.any(String)]);
+      expect(screen.getAllByTestId('belonging-card')).toHaveLength(before - 1);
+      expect(card('My Laptop')).toBeUndefined();
+      // Back to normal mode.
+      expect(screen.getByRole('button', { name: 'Select belongings to delete' })).toBeInTheDocument();
+      confirm.mockRestore();
+    });
+
+    it('keeps everything when the confirm is cancelled, and Escape leaves trash mode', async () => {
+      const onDeleteBelongings = vi.fn(async (ids: string[]) => ids);
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      setup({ onDeleteBelongings });
+      await userEvent.click(screen.getByRole('button', { name: 'Select belongings to delete' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Select My Laptop' }));
+      await userEvent.click(screen.getByRole('button', { name: /^Delete 1/ }));
+      expect(onDeleteBelongings).not.toHaveBeenCalled();
+      expect(card('My Laptop')).toBeDefined();
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('button', { name: /^Select My Laptop/ })).not.toBeInTheDocument();
+      confirm.mockRestore();
+    });
+  });
+
   it('renders header status and counts', () => {
     setup();
     expect(screen.getByRole('heading', { name: 'RecallAI' })).toBeInTheDocument();
@@ -79,7 +185,7 @@ describe('Dashboard', () => {
 
     expect(within(card('Water Bottle')).getByText('Left view')).toBeInTheDocument();
     expect(within(card('My Bag')).getByText('Unchecked')).toBeInTheDocument();
-    expect(within(card('Phone')).getByText('Waiting for Grok…')).toBeInTheDocument();
+    expect(within(card('Phone')).getByText('Waiting for Khris…')).toBeInTheDocument();
     expect(within(card('My Mouse')).getByText('Not seen yet')).toBeInTheDocument();
   });
 
@@ -157,7 +263,7 @@ describe('Dashboard', () => {
     expect(chips.map(c => c.querySelector('span')!.textContent)).toEqual(['#1031', '#1044']);
     expect(chips.map(c => c.querySelector('.cite-age')!.textContent)).toEqual(['41m', '23m']);
     expect(chips[1].querySelector('img')).toHaveAttribute('src', '/demo/crop_bottle.jpg');
-    expect(screen.getByText('How Grok found this (3 steps)')).toBeInTheDocument();
+    expect(screen.getByText('How Khris found this (3 steps)')).toBeInTheDocument();
     expect(screen.getByText(/recent_sightings \(belonging_id: b8e2d17c4a90, limit: 5\)/)).toBeInTheDocument();
   });
 
@@ -187,15 +293,15 @@ describe('Dashboard', () => {
         {...props}
         ask={{
           entries: [
-            { id: 1, question: 'a', status: 'error', error: "Grok couldn't answer right now." },
+            { id: 1, question: 'a', status: 'error', error: "Khris couldn't answer right now." },
             { id: 2, question: 'b', status: 'pending' },
           ],
           pending: true, onAsk, onClear: vi.fn(),
         }}
       />
     );
-    expect(screen.getByRole('alert')).toHaveTextContent("Grok couldn't answer");
-    expect(screen.getByText(/Grok is looking/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent("Khris couldn't answer");
+    expect(screen.getByText(/Khris is looking/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
   });
 
@@ -203,7 +309,7 @@ describe('Dashboard', () => {
     setup();
     const feed = screen.getByRole('region', { name: 'Live activity' });
     expect(within(feed).getByText('Phone spotted')).toBeInTheDocument();
-    expect(within(feed).getByText('Grok described My Laptop')).toBeInTheDocument();
+    expect(within(feed).getByText('Khris described My Laptop')).toBeInTheDocument();
     expect(within(feed).getByText('Water Bottle left view')).toBeInTheDocument();
   });
 
@@ -262,7 +368,7 @@ describe('Dashboard', () => {
 
     it('shows the camera frame with a clickable box per belonging in view', async () => {
       setup({ camera: online });
-      const panel = screen.getByRole('region', { name: /Live feed/ });
+      const panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       expect(within(panel).getByText('REC')).toBeInTheDocument();
       expect(within(panel).getByRole('img', { name: /In view: My Laptop, My Bag, Chawin/ })).toHaveAttribute(
         'src',
@@ -276,12 +382,14 @@ describe('Dashboard', () => {
 
     it('lists what is happening: yours in view, missing items, each person and other objects', () => {
       setup({ camera: online });
-      const panel = screen.getByRole('region', { name: /Live feed/ });
+      const panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       const rows = within(panel).getAllByRole('listitem').filter(li => li.classList.contains('event'));
       const text = rows.map(r => r.textContent);
       expect(text[0]).toMatch(/^In viewMy Laptop.*91\.2%/);
       expect(text[1]).toMatch(/^In viewMy Bag.*86\.1%/);
       expect(text[2]).toMatch(/^MissingWater BottleOut of view since/);
+      // Only the missing row is highlighted red.
+      expect(rows.filter(r => r.classList.contains('event-missing')).map(r => r.textContent)).toEqual([text[2]]);
       expect(text[3]).toMatch(/^PersonChawinRecognized from the photos you named.*83\.0%/);
       // One row per unnamed person, numbered left to right.
       expect(text[4]).toMatch(/^PersonPerson 1Detected, not identified.*71\.0%/);
@@ -290,14 +398,14 @@ describe('Dashboard', () => {
       expect(text[6]).toMatch(/^Objectsbottle, 2 × chairNot your belongings/);
       expect(text).toHaveLength(7);
       expect(within(panel).getByText('8 tracked · 3 people')).toBeInTheDocument();
-      expect(within(panel).getByText('match 88.7%')).toBeInTheDocument();
+      expect(within(panel).getByText('88.7%')).toBeInTheDocument();
     });
 
     it('names a person by double-clicking their row; the picture only shows names', async () => {
       let resolve!: (r: LabelResult) => void;
       const onLabelPerson = vi.fn((_bbox: Box, _name: string) => new Promise<LabelResult>(r => (resolve = r)));
       const { rerender, props } = setup({ camera: online, people: makePeople(NOW), onLabelPerson, onRenamePerson: vi.fn() });
-      const panel = screen.getByRole('region', { name: /Live feed/ });
+      const panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       const scene = panel.querySelector<HTMLElement>('.live-scene')!;
       // Nothing on the camera picture is editable: its only buttons are your belongings.
       expect(within(scene).getByText('Chawin 83%')).toBeInTheDocument();
@@ -343,7 +451,7 @@ describe('Dashboard', () => {
         bbox,
       }));
       setup({ camera: online, people: makePeople(NOW), onLabelPerson, onRenamePerson });
-      const panel = screen.getByRole('region', { name: /Live feed/ });
+      const panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       within(panel).getByRole('button', { name: 'Chawin in view, press Enter to rename' }).focus();
       await userEvent.keyboard('{Enter}');
       const input = within(panel).getByRole('textbox', { name: 'New name for Chawin' });
@@ -365,7 +473,7 @@ describe('Dashboard', () => {
     it('says why a name was not saved, and is read-only without a handler', async () => {
       const onLabelPerson = vi.fn(() => Promise.reject(new Error('That person isn’t in view any more.')));
       const { unmount } = setup({ camera: online, people: makePeople(NOW), onLabelPerson });
-      let panel = screen.getByRole('region', { name: /Live feed/ });
+      let panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       await userEvent.dblClick(within(panel).getByRole('button', { name: /^Person 1 in view/ }));
       await userEvent.type(within(panel).getByRole('textbox', { name: 'Name Person 1' }), 'Sam{Enter}');
       expect(await within(panel).findByRole('alert')).toHaveTextContent('That person isn’t in view any more.');
@@ -373,7 +481,7 @@ describe('Dashboard', () => {
       unmount();
 
       setup({ camera: online, people: makePeople(NOW) });
-      panel = screen.getByRole('region', { name: /Live feed/ });
+      panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       expect(within(panel).queryByRole('button', { name: /not named yet|to rename/ })).toBeNull();
       expect(within(panel).getByText('Person 1')).toBeInTheDocument();
       expect(within(panel).getByText('Chawin 83%')).toBeInTheDocument();
@@ -381,7 +489,7 @@ describe('Dashboard', () => {
 
     it('explains how to start the camera when it is off', () => {
       setup({ camera: { ...parseLive({ online: false }), status: 'offline', frameUrl: '' } });
-      const panel = screen.getByRole('region', { name: /Live feed/ });
+      const panel = screen.getByRole('region', { name: /^Live (REC|OFF)/ });
       expect(within(panel).getByText('OFF')).toBeInTheDocument();
       expect(within(panel).getByText('python -m recallai.vision.webcam')).toBeInTheDocument();
       expect(within(panel).queryByRole('img')).not.toBeInTheDocument();
@@ -432,9 +540,9 @@ describe('Dashboard', () => {
       expect(chawin.querySelector('.person-photos img')).toHaveAttribute('src', '/api/people/1/photos/reference_1.jpg');
 
       // Closing and reopening reuses the answer.
-      await userEvent.click(within(chawin).getByRole('button', { name: /^Hide what Grok sees/ }));
+      await userEvent.click(within(chawin).getByRole('button', { name: /^Hide what Khris sees/ }));
       expect(within(chawin).queryByText('Black hoodie')).toBeNull();
-      await userEvent.click(within(chawin).getByRole('button', { name: /^Show what Grok sees/ }));
+      await userEvent.click(within(chawin).getByRole('button', { name: /^Show what Khris sees/ }));
       expect(within(chawin).getByText('Black hoodie')).toBeInTheDocument();
       expect(onDescribePerson).toHaveBeenCalledTimes(1);
 

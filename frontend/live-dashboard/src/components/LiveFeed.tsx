@@ -174,7 +174,7 @@ export function LiveFeed({ camera, missing, now, onSelect, people = [], onRename
       <div className="live-main">
         <header className="live-head">
           <h2 id="live-title">
-            Live feed
+            Live
             <span className={`rec${online ? ' rec-on' : ''}`}>
               <span className="rec-dot" aria-hidden="true" />
               {online ? 'REC' : 'OFF'}
@@ -264,13 +264,13 @@ export function LiveFeed({ camera, missing, now, onSelect, people = [], onRename
         )}
 
         <header className="live-side-head">
-          <h3 className="live-side-title">What’s happening</h3>
+          <h3 className="live-side-title">In proximity</h3>
           <span
             className={`acc-pill mono acc-${accuracyTone(acc)}`}
             title="Average match score of your belongings in the current frame"
           >
             <AccuracyMeter pct={acc} width={34} />
-            match {acc === null ? '—' : `${acc.toFixed(1)}%`}
+            {acc === null ? '—' : `${acc.toFixed(1)}%`}
           </span>
         </header>
         {naming.notice && (
@@ -327,7 +327,7 @@ export function LiveFeed({ camera, missing, now, onSelect, people = [], onRename
                 );
               }
               return (
-                <li key={r.key} className="event" {...point}>
+                <li key={r.key} className={`event${r.kind === 'missing' ? ' event-missing' : ''}`} {...point}>
                   {r.belongingId ? (
                     <button type="button" className="event-row" onClick={() => onSelect(r.belongingId!)}>
                       {body}

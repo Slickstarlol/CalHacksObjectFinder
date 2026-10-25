@@ -64,6 +64,7 @@ class LivePublisher:
         self._pending = None
         self._stop = threading.Event()
         self.remote_enroll = None
+        self.belongings_version = None   # server's count of deletes; changes -> reload
         self._people_jobs = []
         self._thread = threading.Thread(
             target=self._loop, name="recall-live", daemon=True)
@@ -127,6 +128,8 @@ class LivePublisher:
                 data = None
             if isinstance(data, dict) and "enroll" in data:
                 self.remote_enroll = data["enroll"]
+            if isinstance(data, dict) and isinstance(data.get("belongings_version"), int):
+                self.belongings_version = data["belongings_version"]
             jobs = data.get("people_jobs") if isinstance(data, dict) else None
             if isinstance(jobs, list):
                 with self._lock:

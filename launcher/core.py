@@ -346,6 +346,7 @@ class Runner:
                 if code is not None:
                     if code == 0:
                         self._set(step, "done")
+                        self._maybe_open(step)
                         return True
                     self._set(step, "failed", f"exited with code {code}")
                     return False

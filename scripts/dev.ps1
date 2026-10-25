@@ -7,10 +7,9 @@ RecallAI dev helper (Windows PowerShell). Run from anywhere:
     .\scripts\dev.ps1 camera --camera 1  # webcam loop (args go to the webcam script)
     .\scripts\dev.ps1 register --list  # register belongings (args go to register)
     .\scripts\dev.ps1 ask "where is my mouse?"
-    .\scripts\dev.ps1 dashboard        # frontend/dashboard on :5173
     .\scripts\dev.ps1 live-dashboard   # frontend/live-dashboard on :5174
     .\scripts\dev.ps1 spacetime        # local SpacetimeDB server on :3000
-    .\scripts\dev.ps1 publish          # publish spacetimedb/ as "recallai"
+    .\scripts\dev.ps1 publish          # publish spacetimedb/ as "calhacks-l28u4" on Maincloud
     .\scripts\dev.ps1 test             # every test suite (Python + 3 npm projects)
     .\scripts\dev.ps1 test-fast        # Python tests without model downloads
     .\scripts\dev.ps1 migrate          # move old root-level data into data/
@@ -39,7 +38,7 @@ switch ($Command) {
     "setup" {
         Run "." $Python @("-m", "pip", "install", "-r", "backend/requirements.txt")
         Run "." $Python @("-m", "pip", "install", "-e", "backend")
-        foreach ($d in "spacetimedb", "frontend/live-dashboard", "frontend/dashboard") { Run $d "npm" @("install") }
+        foreach ($d in "spacetimedb", "frontend/live-dashboard") { Run $d "npm" @("install") }
         Run "." $Python @("scripts/migrate_layout.py")
     }
     "server"         { Run "." $Python (@("-m", "uvicorn", "recallai.api.server:app", "--host", "0.0.0.0", "--port", "8000") + $Rest) }
@@ -48,10 +47,9 @@ switch ($Command) {
     "ask"            { Run "." $Python (@("-m", "recallai.ai.agent") + $Rest) }
     "check-grok"     { Run "." $Python (@("-m", "recallai.ai.check_grok") + $Rest) }
     "sync-once"      { Run "." $Python @("-m", "recallai.sync.spacetime_bridge", "--once") }
-    "dashboard"      { Run "frontend/dashboard" "npm" @("run", "dev") }
     "live-dashboard" { Run "frontend/live-dashboard" "npm" @("run", "dev") }
     "spacetime"      { Run "." "spacetime" @("start") }
-    "publish"        { Run "spacetimedb" "spacetime" (@("publish", "--server", "local", "recallai") + $Rest) }
+    "publish"        { Run "spacetimedb" "spacetime" (@("publish", "--server", "maincloud", "calhacks-l28u4") + $Rest) }
     "generate"       { Run "frontend/live-dashboard" "npm" @("run", "spacetime:generate") }
     "migrate"        { Run "." $Python (@("scripts/migrate_layout.py") + $Rest) }
     "test-fast"      { Run "." $Python @("-m", "pytest", "-q", "-m", "not slow") }
@@ -61,8 +59,6 @@ switch ($Command) {
         Run "spacetimedb" "npx" @("vitest", "run")
         Run "frontend/live-dashboard" "npm" @("run", "build")
         Run "frontend/live-dashboard" "npx" @("vitest", "run")
-        Run "frontend/dashboard" "npm" @("run", "build")
-        Run "frontend/dashboard" "npm" @("run", "lint")
     }
     default {
         Write-Host $Usage

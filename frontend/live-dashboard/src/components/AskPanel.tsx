@@ -52,7 +52,7 @@ export function AskPanel({ entries, pending, onAsk, onClear, sightingsById, apiB
       </header>
 
       {entries.length === 0 ? (
-        <p className="muted small">Ask Grok about anything the camera has seen. Answers cite the sightings they come from.</p>
+        <p className="muted small">Ask Khris about anything the camera has seen. Answers cite the sightings they come from.</p>
       ) : (
         <div className="ask-log" aria-live="polite">
           {entries.map(e => (
@@ -65,7 +65,7 @@ export function AskPanel({ entries, pending, onAsk, onClear, sightingsById, apiB
                     <span />
                     <span />
                   </span>
-                  Grok is looking through your memories…
+                  Khris is looking through your memories…
                 </p>
               )}
               {e.status === 'error' && (
@@ -171,7 +171,7 @@ function Answer({
       {res.steps.length > 0 && (
         <details className="steps">
           <summary>
-            How Grok found this ({res.steps.length} step{res.steps.length === 1 ? '' : 's'})
+            How Khris found this ({res.steps.length} step{res.steps.length === 1 ? '' : 's'})
           </summary>
           <ol>
             {res.steps.map((s, i) => (

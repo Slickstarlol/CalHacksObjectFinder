@@ -251,6 +251,9 @@ def test_gps_is_per_user_and_device_sees_each_owner(two):
     assert two.server.fresh_gps(two.bid) is None
     # a signed-in browser is not the device
     assert two.a.get("/api/device/gps").status_code == 403
+    # the dashboard posts the same fix under /api (its dev proxy only forwards /api)
+    assert two.b.post("/api/gps", json={"latitude": 5, "longitude": 6, "accuracy": 7}).status_code == 200
+    assert two.b.get("/gps/latest").json()["latitude"] == 5
 
 
 # ================================================================ devices
@@ -528,3 +531,53 @@ def test_users_cli_list_and_claim(tmp_path, monkeypatch, capsys):
     assert "sightings=1, alerts=0, people=0, belongings=1" in capsys.readouterr().out
     assert read_owner(tmp_path / "belongings" / "keys") is not None
     assert users.main(["claim", "ghost"]) == 1
+
+
+# ================================================================ deleting belongings
+def test_delete_belonging_removes_photos_and_history_and_tells_the_camera(two):
+    camera = _client(two.app, host="127.0.0.1")
+    before = camera.post("/api/live", json={}).json()["belongings_version"]
+    # Bob can't delete Alice's bag; it isn't his.
+    assert two.b.delete("/api/belongings/bag1").status_code == 404
+    assert (two.dir / "bag1").is_dir()
+
+    r = two.a.delete("/api/belongings/bag1")
+    assert r.status_code == 200
+    assert r.json() == {"status": "deleted", "id": "bag1", "name": "My Bag",
+                        "sightings": 1, "alerts": 1}
+    assert not (two.dir / "bag1").exists()
+    assert [b["id"] for b in two.a.get("/api/belongings").json()] == []
+    with dbmod.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM sightings WHERE belonging_id='bag1'").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM alerts WHERE belonging_id='bag1'").fetchone()[0] == 0
+        # Generic sightings and Bob's things are untouched.
+        assert db.execute("SELECT COUNT(*) FROM sightings WHERE id IN (?, ?)",
+                          (two.generic_sid, two.bob_sid)).fetchone()[0] == 2
+    assert (two.dir / "mouse2").is_dir()
+    assert camera.post("/api/live", json={}).json()["belongings_version"] == before + 1
+    assert two.a.delete("/api/belongings/bag1").status_code == 404
+
+
+def test_rename_belonging_updates_history_keeps_alias_and_tells_the_camera(two):
+    camera = _client(two.app, host="127.0.0.1")
+    before = camera.post("/api/live", json={}).json()["belongings_version"]
+    assert two.b.put("/api/belongings/bag1", json={"name": "Not yours"}).status_code == 404
+    assert two.a.put("/api/belongings/bag1", json={"name": "   "}).status_code == 422
+
+    r = two.a.put("/api/belongings/bag1", json={"name": "  Alice's   blue backpack "})
+    assert r.status_code == 200
+    assert r.json() == {"id": "bag1", "name": "Alice's blue backpack", "previous": "My Bag"}
+    info = json.loads((two.dir / "bag1" / "info.json").read_text())
+    assert info["name"] == "Alice's blue backpack" and info["aliases"] == ["My Bag"]
+    with dbmod.connect() as db:
+        names = {n for (n,) in db.execute(
+            "SELECT belonging_name FROM sightings WHERE belonging_id='bag1'")}
+        alert = db.execute("SELECT belonging_name FROM alerts WHERE id=?",
+                           (two.legacy_alert,)).fetchone()[0]
+    assert names == {"Alice's blue backpack"} and alert == "Alice's blue backpack"
+    assert camera.post("/api/live", json={}).json()["belongings_version"] == before + 1
+
+    # Renaming back drops it from the aliases instead of listing it twice.
+    two.a.put("/api/belongings/bag1", json={"name": "my bag"})
+    info = json.loads((two.dir / "bag1" / "info.json").read_text())
+    assert info["name"] == "my bag" and info["aliases"] == ["Alice's blue backpack"]

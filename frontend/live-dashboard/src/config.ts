@@ -1,9 +1,7 @@
-import { defaultSpacetimeHost } from './lib/host';
-
+/** SpacetimeDB Maincloud; set VITE_SPACETIMEDB_HOST=ws://localhost:3000 to use a local server. */
 export const SPACETIMEDB_HOST: string =
-  import.meta.env.VITE_SPACETIMEDB_HOST ||
-  defaultSpacetimeHost(typeof window !== 'undefined' ? window.location : undefined);
+  import.meta.env.VITE_SPACETIMEDB_HOST || 'wss://maincloud.spacetimedb.com';
 export const SPACETIMEDB_DB_NAME: string =
-  import.meta.env.VITE_SPACETIMEDB_DB_NAME || 'recallai';
+  import.meta.env.VITE_SPACETIMEDB_DB_NAME || 'calhacks-l28u4';
 /** "" = same origin (Vite dev proxy -> :8000, or FastAPI serving /app in prod). */
 export const API_BASE: string = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '');

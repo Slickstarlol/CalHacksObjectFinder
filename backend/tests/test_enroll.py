@@ -1,4 +1,4 @@
-"""Five still angles, same YOLO category, and the shots that already landed stay."""
+"""Every still angle (enroll.ANGLES), same YOLO category, and the shots that already landed stay."""
 
 import json
 from types import SimpleNamespace
@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from recallai.memory import db as dbmod
 from conftest import sign_in
-from recallai.vision.enroll import AngleCapture, save_angle
+from recallai.vision.enroll import ANGLES, AngleCapture, save_angle
 from recallai.vision.recognition import BelongingMatcher, HistogramEmbedder
 
 
@@ -125,12 +125,12 @@ def test_five_angles_keep_partial_photos_and_then_track(tmp_path):
     first = list((tmp_path / info["id"]).glob("reference_*.jpg"))
     assert len(first) == 1
 
-    for n in range(2, 5):
+    for n in range(2, ANGLES):
         info, count = save_angle(tmp_path, "mouse", crop, info["id"])
         assert count == n and info["tracking"] is False
     info, count = save_angle(tmp_path, "mouse", crop, info["id"])
-    assert count == 5 and info["tracking"] is True
-    assert len(list((tmp_path / info["id"]).glob("reference_*.jpg"))) == 5
+    assert count == ANGLES and info["tracking"] is True
+    assert len(list((tmp_path / info["id"]).glob("reference_*.jpg"))) == ANGLES
 
     again, again_count = save_angle(tmp_path, "mouse", crop)
     assert again["id"] != info["id"]

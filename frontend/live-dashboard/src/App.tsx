@@ -5,10 +5,14 @@ import type { Person, Sighting } from './module_bindings/types';
 import { Dashboard } from './components/Dashboard';
 import type { ConnectionStatus } from './components/types';
 import { useAsk } from './hooks/useAsk';
+import { useEnroll } from './hooks/useEnroll';
+import { useGeolocation } from './hooks/useGeolocation';
+import { useIpLocation } from './hooks/useIpLocation';
 import { useLiveCamera } from './hooks/useLiveCamera';
 import { useNow } from './hooks/useNow';
 import { classifyUpdate, pushActivity, type ActivityItem } from './lib/activity';
 import { isVisible } from './lib/sightings';
+import { deleteBelongings, renameBelonging } from './lib/belongings';
 import { describePerson, labelPerson, renamePerson } from './lib/people';
 import type { Box } from './lib/live';
 import { ownedBy, ownerKey, type AuthUser } from './lib/auth';
@@ -94,6 +98,14 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
   const now = useNow(30_000);
   const ask = useAsk(API_BASE, authFetch);
   const camera = useLiveCamera(API_BASE, authFetch);
+  useGeolocation(API_BASE, authFetch);
+  const ipLocation = useIpLocation();
+  const enroll = useEnroll(API_BASE, authFetch);
+  const onRenameBelonging = useCallback(
+    (id: string, name: string) => renameBelonging(id, name, API_BASE, authFetch),
+    [authFetch]
+  );
+  const onDeleteBelongings = useCallback((ids: string[]) => deleteBelongings(ids, API_BASE, authFetch), [authFetch]);
   const onLabelPerson = useCallback(
     (bbox: Box, name: string, personId?: number) => labelPerson({ bbox, name, personId }, API_BASE, authFetch),
     [authFetch]
@@ -115,6 +127,10 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
       sightings={sightings}
       alerts={alerts}
       people={people}
+      ipLocation={ipLocation}
+      onDeleteBelongings={onDeleteBelongings}
+      enroll={enroll}
+      onRenameBelonging={onRenameBelonging}
       activity={activity}
       now={now}
       apiBase={API_BASE}

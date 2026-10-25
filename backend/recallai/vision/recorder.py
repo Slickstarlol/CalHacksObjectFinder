@@ -143,7 +143,14 @@ class SightingRecorder:
                 self.last_row[bid] = (row_id, now)
 
         # Items that were visible but haven't been for a while.
+        registered = {b.id for b in self.matcher.belongings}
         for bid, seen in list(self.last_seen.items()):
+            if bid not in registered:
+                # Deleted on the dashboard: forget it, don't log it leaving.
+                for state in (self.last_seen, self.last_saved, self.last_row):
+                    state.pop(bid, None)
+                self.left_logged.discard(bid)
+                continue
             if bid in best or bid in self.left_logged:
                 continue
             if now - seen.mono >= self.gone_after:

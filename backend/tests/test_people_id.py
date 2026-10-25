@@ -187,3 +187,17 @@ def test_boxes_are_drawn_as_corners_only():
     assert img[10, 10].any() and img[110, 110].any() and img[10, 25].any()   # the corners
     assert not img[10, 60].any() and not img[60, 10].any()                   # edges stay open
     assert not img[60, 60].any()
+
+
+def test_headshot_is_the_top_square_of_a_body_photo(tmp_path):
+    import cv2
+    import numpy as np
+    from recallai.vision.people_id import headshot_jpeg
+    body = np.zeros((300, 100, 3), np.uint8)
+    body[:100] = (0, 0, 255)                 # "head" region red, rest black
+    path = tmp_path / "reference_1.jpg"
+    cv2.imwrite(str(path), body)
+    shot = cv2.imdecode(np.frombuffer(headshot_jpeg(path, size=64), np.uint8), cv2.IMREAD_COLOR)
+    assert shot.shape == (64, 64, 3)
+    assert shot[..., 2].mean() > 200 and shot[..., 0].mean() < 40   # all head, no body
+    assert headshot_jpeg(tmp_path / "missing.jpg") is None

@@ -74,7 +74,7 @@ def test_shipped_steps_file_is_valid(tmp_path):
     steps = core.load_steps(LAUNCHER / "steps.json", tmp_path / "none.json")
     ids = [s.id for s in steps]
     assert ids == ["check-grok", "spacetime", "publish", "server", "camera",
-                   "dashboard", "live-dashboard"]
+                   "live-dashboard"]
     for s in steps:
         assert s.ready["type"] in ("http", "port", "exit", "alive")
         assert (LAUNCHER.parent / s.cwd).is_dir(), f"{s.id}: cwd {s.cwd} missing"
@@ -83,7 +83,7 @@ def test_shipped_steps_file_is_valid(tmp_path):
                 assert tok in ("{python}", "{npm}", "{spacetime}")
                 assert tok[1:-1] in s.needs
     # The server must come before the things that talk to it.
-    assert ids.index("server") < ids.index("camera") < ids.index("dashboard")
+    assert ids.index("server") < ids.index("camera") < ids.index("live-dashboard")
     assert ids.index("spacetime") < ids.index("publish") < ids.index("live-dashboard")
 
 

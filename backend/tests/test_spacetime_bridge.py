@@ -421,7 +421,7 @@ def test_config_defaults(monkeypatch):
     monkeypatch.delenv("SPACETIME_URL", raising=False)
     monkeypatch.delenv("SPACETIME_DB", raising=False)
     monkeypatch.setattr(sb.llm, "load_env_file", lambda *a, **k: [])
-    assert sb.config() == ("http://localhost:3000", "recallai")
+    assert sb.config() == ("https://maincloud.spacetimedb.com", "calhacks-l28u4")
     monkeypatch.setenv("SPACETIME_URL", "http://h:1/")
     monkeypatch.setenv("SPACETIME_DB", "x")
     assert sb.config() == ("http://h:1", "x")

@@ -20,7 +20,7 @@ describe('askRecall', () => {
 
   it('maps 502 to a friendly Grok error with the detail', async () => {
     const f = vi.fn().mockResolvedValue(json(502, { detail: 'Grok request failed: timeout' }));
-    await expect(askRecall(req, '', f)).rejects.toMatchObject({ status: 502, message: "Grok couldn't answer right now: timeout" });
+    await expect(askRecall(req, '', f)).rejects.toMatchObject({ status: 502, message: "Khris couldn't answer right now: timeout" });
   });
 
   it('maps network failures to a reachability message', async () => {

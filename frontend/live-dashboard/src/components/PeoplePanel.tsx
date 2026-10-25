@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Person } from '../module_bindings/types';
 import { knownFor, sortPeople, type PersonDescription } from '../lib/people';
+import { personColorVars } from '../lib/personColor';
 import { resolveUrl } from '../lib/url';
 import { SparkIcon } from './Icons';
 import { NameInput } from './NameInput';
@@ -17,9 +18,24 @@ type Props = {
 
 type GrokState = { status: 'loading' | 'done' | 'error'; data?: PersonDescription; error?: string };
 
-const TONES = ['tone-sky', 'tone-sand', 'tone-mint'];
 /** A single click on a name waits this long, so a double-click (rename) doesn't also open the row. */
 const CLICK_DELAY = 250;
+
+/** The first photo the camera saved of them, or their initial until there is one. */
+function TileFace({ id, letter, apiBase }: { id: string; letter: string; apiBase: string }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [id]);
+  if (broken) return <>{letter}</>;
+  return (
+    <img
+      className="person-avatar"
+      src={resolveUrl(`/api/people/${id}/avatar`, apiBase)}
+      alt=""
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  );
+}
 
 /** A person's name: double-click (or Enter / F2) to rename it in place. */
 function PersonName({ shown, onSave, onOpen }: { shown: string; onSave?: (name: string) => void; onOpen?: () => void }) {
@@ -93,7 +109,7 @@ function PersonGrok({
       )}
       <div className="grok-bubble">
         <span className="grok-who mono">
-          <SparkIcon /> Grok
+          <SparkIcon /> Khris
         </span>
         {state?.status === 'loading' ? (
           <p className="grok-thinking">
@@ -172,7 +188,7 @@ export function PeoplePanel({ people, now, onRename, onDescribe, apiBase = '' }:
       (err: unknown) =>
         setGrok(g => ({
           ...g,
-          [key]: { status: 'error', data: g[key]?.data, error: err instanceof Error ? err.message : 'Grok couldn’t describe them.' },
+          [key]: { status: 'error', data: g[key]?.data, error: err instanceof Error ? err.message : 'Khris couldn’t describe them.' },
         }))
     );
   };
@@ -202,12 +218,12 @@ export function PeoplePanel({ people, now, onRename, onDescribe, apiBase = '' }:
         <p className="muted small">No people saved yet.</p>
       ) : (
         <ul className="people-list">
-          {sorted.map((p, i) => {
+          {sorted.map(p => {
             const key = String(p.id);
             const known = knownFor(p.knownSince, now);
             const shown = pending[key] ?? p.name;
             const open = openId === key;
-            const tile = `person-tile ${TONES[i % TONES.length]}`;
+            const tile = 'person-tile';
             return (
               <li
                 key={key}
@@ -226,16 +242,17 @@ export function PeoplePanel({ people, now, onRename, onDescribe, apiBase = '' }:
                   <button
                     type="button"
                     className={tile}
+                    style={personColorVars(p.id)}
                     aria-expanded={open}
                     aria-controls={`grok-${key}`}
-                    aria-label={`${open ? 'Hide' : 'Show'} what Grok sees in ${shown}’s photos`}
+                    aria-label={`${open ? 'Hide' : 'Show'} what Khris sees in ${shown}’s photos`}
                     onClick={() => toggle(p)}
                   >
-                    {shown.charAt(0).toUpperCase()}
+                    <TileFace id={key} letter={shown.charAt(0).toUpperCase()} apiBase={apiBase} />
                   </button>
                 ) : (
-                  <span className={tile} aria-hidden="true">
-                    {shown.charAt(0).toUpperCase()}
+                  <span className={tile} style={personColorVars(p.id)} aria-hidden="true">
+                    <TileFace id={key} letter={shown.charAt(0).toUpperCase()} apiBase={apiBase} />
                   </span>
                 )}
                 <div className="person-body">
@@ -247,7 +264,7 @@ export function PeoplePanel({ people, now, onRename, onDescribe, apiBase = '' }:
                     />
                     {p.relationship && <span className="chip">{p.relationship}</span>}
                     {onDescribe && (
-                      <span className="person-spark" title="Click for Grok’s description" aria-hidden="true">
+                      <span className="person-spark" title="Click for Khris’s description" aria-hidden="true">
                         <SparkIcon />
                       </span>
                     )}

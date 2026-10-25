@@ -6,14 +6,18 @@ is just the UI, and it signs in before calling the API.
 """
 
 
+import shutil
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 
 from recallai import owners, paths
 from recallai.api.auth import current_user
 from recallai.memory import db as dbmod
 from recallai.memory import temporal_memory as tm
-from recallai.vision.recognition import BELONGINGS_DIR, load_belongings
+from recallai.vision.recognition import BELONGINGS_DIR, load_belongings, set_name
 
 router = APIRouter()
 
@@ -75,6 +79,72 @@ def list_belongings(user=Depends(current_user)):
             })
     out.sort(key=lambda x: (x["last"] or {}).get("timestamp") or "", reverse=True)
     return out
+
+
+# Bumped on every delete; the camera reloads its belongings when it changes
+# (server.py sends it back in the POST /api/live reply).
+_version_lock = threading.Lock()
+_belongings_version = 0
+
+
+def belongings_version():
+    return _belongings_version
+
+
+def _changed():
+    global _belongings_version
+    with _version_lock:
+        _belongings_version += 1
+
+
+class Rename(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.put("/api/belongings/{belonging_id}")
+def rename_belonging(belonging_id: str, body: Rename, user=Depends(current_user)):
+    """Rename one of your belongings. Its history takes the new name too (so
+    Khris and the dashboard agree); the old name is kept as an alias."""
+    uid = user["id"]
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(422, "The name can't be empty.")
+    item = next((b for b in my_belongings(uid) if b.id == belonging_id), None)
+    if item is None:
+        raise HTTPException(404, f'No registered belonging "{belonging_id}"')
+    old = set_name(item.folder, name)
+    if old is None:
+        raise HTTPException(409, f"Couldn't rename {item.name}; try again.")
+    with dbmod.connect() as db:
+        db.execute("UPDATE sightings SET belonging_name = ? WHERE belonging_id = ? AND owner_id = ?",
+                   (name, belonging_id, uid))
+        db.execute("UPDATE alerts SET belonging_name = ? WHERE belonging_id = ? AND owner_id = ?",
+                   (name, belonging_id, uid))
+        db.commit()
+    _changed()   # the camera writes new sightings under the new name
+    return {"id": belonging_id, "name": name, "previous": old}
+
+
+@router.delete("/api/belongings/{belonging_id}")
+def delete_belonging(belonging_id: str, user=Depends(current_user)):
+    """Delete one of your belongings: its reference photos and its sighting
+    and alert history. The camera stops tracking it on its next frame."""
+    uid = user["id"]
+    item = next((b for b in my_belongings(uid) if b.id == belonging_id), None)
+    if item is None:
+        raise HTTPException(404, f'No registered belonging "{belonging_id}"')
+    shutil.rmtree(item.folder, ignore_errors=True)
+    if item.folder.exists():
+        raise HTTPException(409, f"Couldn't delete {item.name}'s photos; is a file open?")
+    with dbmod.connect() as db:
+        sightings = db.execute("DELETE FROM sightings WHERE belonging_id = ? AND owner_id = ?",
+                               (belonging_id, uid)).rowcount
+        alerts = db.execute("DELETE FROM alerts WHERE belonging_id = ? AND owner_id = ?",
+                            (belonging_id, uid)).rowcount
+        db.commit()
+    _changed()
+    return {"status": "deleted", "id": belonging_id, "name": item.name,
+            "sightings": sightings, "alerts": alerts}
 
 
 @router.get("/api/belongings/{belonging_id}/last-seen")

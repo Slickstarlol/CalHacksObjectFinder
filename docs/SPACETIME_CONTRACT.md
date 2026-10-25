@@ -51,7 +51,7 @@ TypeScript keys are camelCase; SpacetimeDB column names (used in SQL) are snake_
 | name | name | string | info.json name |
 | category | category | string | info.json category |
 | photos | photos | u32 | number of `reference_*` images |
-| tracking | tracking | bool | info.json `tracking` (missing → true). **false while enrolling**: `enroll.py` creates the folder with `"tracking": false` and flips it to true once all 5 angles are saved; the matcher ignores it until then. `default(true)`, so an already-published database upgrades in place (no `--delete-data`). |
+| tracking | tracking | bool | info.json `tracking` (missing → true). **false while enrolling**: `enroll.py` creates the folder with `"tracking": false` and flips it to true once all 3 angles (`enroll.ANGLES`) are saved; the matcher ignores it until then. `default(true)`, so an already-published database upgrades in place (no `--delete-data`). |
 | owner | owner | string | info.json `owner_id` as text ("" if missing). Last column, `default('')`. |
 
 The dashboard shows an **"Enrolling…"** badge (not "Not seen yet") for `tracking = false`.

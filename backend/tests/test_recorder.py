@@ -141,3 +141,15 @@ def test_two_matching_detections_save_one_row(rec):
             Detection("backpack", 0.9, (300, 150, 460, 270))]
     found = rec.process(frame, dets, now=0)
     assert list(found) == ["bag1"] and len(rows(rec)) == 1
+
+
+def test_deleted_belonging_is_forgotten_not_logged_as_left(rec):
+    import shutil
+    frame, (red_box,) = scene([RED])
+    rec.process(frame, [Detection("backpack", 0.9, red_box)], now=0)
+    assert len(rows(rec)) == 1
+    shutil.rmtree(rec.matcher.base_dir / "bag1")    # deleted on the dashboard
+    rec.matcher.reload()
+    rec.process(frame, [], now=100)                 # long gone: would log left_view
+    assert [r["event"] for r in rows(rec)] == ["seen"]
+    assert "bag1" not in rec.last_seen

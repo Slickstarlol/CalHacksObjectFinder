@@ -1,4 +1,4 @@
-"""Collect five still angles of one object from the live camera.
+"""Collect three still angles of one object from the live camera.
 
 webcam.py owns the camera, so it drives this. The dashboard only starts
 the session and shows the prompt. YOLO's category becomes the name — there
@@ -6,9 +6,9 @@ is nothing to type. A shot is kept once it is saved. A later frame that
 misses the object, or labels it as something else, does not erase those
 shots; it asks for that angle again.
 
-The same YOLO category has to hold for all five. Confusable classes
+The same YOLO category has to hold for all three. Confusable classes
 (a mouse YOLO sometimes calls a cell phone) are a failure here on purpose:
-the five photos are how the tracker learns the object, so they must be
+the three photos are how the tracker learns the object, so they must be
 the same label.
 
 Ownership: the dashboard user who pressed Add owns the session; the server
@@ -27,7 +27,7 @@ from pathlib import Path
 from recallai.vision.recognition import BELONGINGS_DIR, load_belongings
 from recallai.vision.register import save_reference
 
-ANGLES = 5
+ANGLES = 3
 STILL_FOR = 0.75     # seconds the box must barely move
 TURN_FOR = 1.4       # after a save, wait this long before the next still-shot
 MISS_FOR = 0.4       # a one-frame YOLO blip is not a failed angle

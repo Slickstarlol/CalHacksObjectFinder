@@ -37,7 +37,7 @@ export function activityText(item: ActivityItem): string {
     case 'new':
       return item.sighting.event === 'left_view' ? `${name} left view` : `${name} spotted`;
     case 'described':
-      return `Grok described ${name}`;
+      return `Khris described ${name}`;
     default:
       return `${name} updated`;
   }

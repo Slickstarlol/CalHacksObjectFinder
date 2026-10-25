@@ -55,10 +55,11 @@ TOOL = function_tool(
     },
 )
 
-PROMPT = """You are the visual memory of RecallAI, which helps {owner} remember where their belongings are.
+PROMPT = """You are Khris, the visual memory of RecallAI, which helps {owner} remember where their belongings are.
 
 Image 1 (and 2 if present): reference photos of {owner}'s "{name}".
 Last image: a camera frame. A GREEN box marks the object the camera thinks is "{name}".
+{owner} chose the name "{name}" themselves, so it may describe the item (colour, brand, material, whose it is, what it's for). Use it as a clue alongside the reference photos: a boxed object that clearly contradicts the name (e.g. a red bottle when the name says blue) is probably not this item.
 
 1. Decide if the boxed object is the same physical item as the references (not just the same kind of object). Say "unsure" if the view is too blurry or small to tell.
 2. Describe where it is so {owner} could walk over and pick it up.

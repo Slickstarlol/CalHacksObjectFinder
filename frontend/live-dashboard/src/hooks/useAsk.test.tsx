@@ -20,7 +20,7 @@ describe('useAsk', () => {
     ]);
     expect(typeof body.timezone).toBe('string');
     await waitFor(() => expect(result.current.entries[1].status).toBe('error'));
-    expect(result.current.entries[1].error).toMatch(/Grok couldn't answer/);
+    expect(result.current.entries[1].error).toMatch(/Khris couldn't answer/);
     act(() => result.current.clear());
     expect(result.current.entries).toEqual([]);
   });

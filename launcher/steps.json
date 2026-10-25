@@ -15,7 +15,7 @@
     {
       "id": "spacetime",
       "name": "SpacetimeDB",
-      "description": "Local SpacetimeDB database on port 3000 (only needed for the live dashboard).",
+      "description": "Local SpacetimeDB database on port 3000 (not needed when using the Maincloud database).",
       "command": ["{spacetime}", "start"],
       "cwd": ".",
       "enabled": false,
@@ -26,8 +26,8 @@
     {
       "id": "publish",
       "name": "Publish SpacetimeDB module",
-      "description": "Uploads spacetimedb/ as database 'recallai' (safe to repeat; keeps data).",
-      "command": ["{spacetime}", "publish", "--server", "local", "--yes", "recallai"],
+      "description": "Uploads spacetimedb/ as database 'calhacks-l28u4' on Maincloud (safe to repeat; keeps data).",
+      "command": ["{spacetime}", "publish", "--server", "maincloud", "--yes", "calhacks-l28u4"],
       "cwd": "spacetimedb",
       "enabled": false,
       "needs": ["spacetime", "npm"],
@@ -62,25 +62,12 @@
       "timeout": 120
     },
     {
-      "id": "dashboard",
-      "name": "Camera dashboard",
-      "description": "Live camera, last locations, people and the Add button (port 5173). Opens in your browser.",
-      "command": ["{npm}", "run", "dev"],
-      "cwd": "frontend/dashboard",
-      "enabled": true,
-      "needs": ["npm"],
-      "install_if_missing": "node_modules",
-      "ready": {"type": "http", "url": "http://localhost:5173/"},
-      "timeout": 240,
-      "open_url": "http://localhost:5173/"
-    },
-    {
       "id": "live-dashboard",
       "name": "Live dashboard (SpacetimeDB)",
-      "description": "Real-time dashboard on port 5174. Needs SpacetimeDB + Publish above.",
+      "description": "Real-time dashboard on port 5174. Needs the Publish step above (the local SpacetimeDB step is not needed for Maincloud).",
       "command": ["{npm}", "run", "dev"],
       "cwd": "frontend/live-dashboard",
-      "enabled": false,
+      "enabled": true,
       "needs": ["npm"],
       "install_if_missing": "node_modules",
       "ready": {"type": "http", "url": "http://localhost:5174/"},

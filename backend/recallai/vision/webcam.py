@@ -223,9 +223,10 @@ def draw_detections(display, detections, skip=()):
 
 
 def _paint_enroll(display, message):
-    """Prompt along the bottom of the frame the dashboard is mirroring."""
+    """Prompt along the bottom of the frame the dashboard is mirroring.
+    Returns the height of the strip it drew (0 when there is no prompt)."""
     if not message:
-        return
+        return 0
     h, w = display.shape[:2]
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale, thick = 0.55, 1
@@ -236,6 +237,18 @@ def _paint_enroll(display, message):
     cv2.rectangle(display, (0, h - th - 22), (w, h), (20, 16, 12), -1)
     cv2.putText(display, message, (12, h - 10), font, scale,
                 (240, 230, 210), thick, cv2.LINE_AA)
+    return th + 22
+
+
+def _paint_fps(display, fps, bottom=0):
+    """Small FPS readout in the bottom-right corner, above `bottom` pixels."""
+    h, w = display.shape[:2]
+    text = f"{fps:.0f} FPS"
+    font, scale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thick)
+    x, y = w - tw - 12, h - bottom - 10
+    cv2.rectangle(display, (x - 6, y - th - 6), (w - 6, y + 6), (20, 16, 12), -1)
+    cv2.putText(display, text, (x, y), font, scale, (240, 230, 210), thick, cv2.LINE_AA)
 
 
 def main():
@@ -280,6 +293,7 @@ def main():
     publisher = LivePublisher(LIVE_URL)
     last_recognize = 0.0
     fps, last_frame = 0.0, time.monotonic()
+    seen_version = None   # server's belongings_version we last loaded for
     guide = AngleCapture()
     enrolling = False
     enroll_id = None
@@ -297,6 +311,7 @@ def main():
             mine = [(m, live_box(det.xyxy, detections))
                     for m, det in list(worker.found.values())]
             display = frame.copy()
+            strip = 0   # height of the enrollment prompt along the bottom, if any
             draw_detections(display, detections, skip=[box for _, box in mine])
             now = time.monotonic()
 
@@ -313,6 +328,14 @@ def main():
                 else:
                     worker.request_people_reload()
                     print(f"[people] saved a photo of person {job.get('person_id')}")
+
+            # A belonging was deleted on the dashboard: stop tracking it.
+            version = getattr(publisher, "belongings_version", None)
+            if version is not None and version != seen_version:
+                if seen_version is not None:
+                    worker.request_reload()
+                    print("[recognition] belongings changed on the dashboard, reloading")
+                seen_version = version
 
             remote = publisher.remote_enroll or {}
             if remote.get("active"):
@@ -346,7 +369,7 @@ def main():
                                 worker.request_reload()
                 if outcome.box:
                     draw_corners(display, outcome.box, (0, 220, 255), 2)
-                _paint_enroll(display, guide.message)
+                strip = _paint_enroll(display, guide.message)
             else:
                 enrolling = False
 
@@ -366,12 +389,7 @@ def main():
             last_frame = now
             if dt > 0:
                 fps = 0.9 * fps + 0.1 * (1 / dt) if fps else 1 / dt
-            gps_ok = gps.latest is not None
-            cv2.putText(display, "GPS: ON" if gps_ok else "GPS: off (optional)",
-                        (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (0, 255, 0) if gps_ok else (0, 165, 255), 2)
-            cv2.putText(display, f"Mine in view: {len(worker.found)}   {fps:.0f} FPS",
-                        (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            _paint_fps(display, fps, strip)
             cv2.imshow("RecallAI - Visual Memory", display)
 
             if now - last_publish >= PUBLISH_EVERY:
@@ -392,7 +410,7 @@ def main():
                     "bbox": [int(v) for v in live_box(det.xyxy, persons)],
                 } for pm, det in list(worker.people_found)]
                 publisher.submit(display, {
-                    "gps": gps_ok,
+                    "gps": gps.latest is not None,
                     "in_view": in_view,
                     "people": named,
                     "detections": [

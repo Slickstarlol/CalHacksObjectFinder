@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Person } from '../module_bindings/types';
 import { boxPercent, iou, percent, type Box, type LiveDetection, type LivePerson } from '../lib/live';
 import type { LabelResult } from '../lib/people';
+import { personColorVars } from '../lib/personColor';
 
 /** One person the camera sees, as the live panel lists them. */
 export type PersonView = {
@@ -179,7 +180,13 @@ export function PersonTags({
           <div
             key={v.key}
             className={`lock lock-person${on ? ' is-focus' : ''}${v.learning ? ' lock-learning' : ''}`}
-            style={{ left: `${pos.left}%`, top: `${pos.top}%`, width: `${pos.width}%`, height: `${pos.height}%` }}
+            style={{
+              left: `${pos.left}%`,
+              top: `${pos.top}%`,
+              width: `${pos.width}%`,
+              height: `${pos.height}%`,
+              ...personColorVars(v.name ? v.personId : undefined),
+            }}
             aria-hidden="true"
           >
             <span className="brackets brackets-person" />

@@ -39,8 +39,8 @@ from recallai.ai import llm
 from recallai.vision.recognition import BELONGINGS_DIR, load_belongings
 
 TOKEN_FILE = paths.SPACETIME_TOKEN   # .spacetime_token at the repository root
-DEFAULT_URL = "http://localhost:3000"
-DEFAULT_DB = "recallai"
+DEFAULT_URL = "https://maincloud.spacetimedb.com"
+DEFAULT_DB = "calhacks-l28u4"
 TIMEOUT = 3          # seconds per HTTP request
 INTERVAL = 1.5       # seconds between syncs
 MAX_BACKOFF = 30     # seconds between retries while SpacetimeDB is down

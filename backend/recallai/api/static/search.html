@@ -282,7 +282,7 @@ async function ask(question) {
     }
     for (const lk of data.lookups || []) turn.append(lookupCard(lk));
     if (data.steps.length) {
-      turn.append(el("details", {}, el("summary", {}, "How Grok found this (" + data.steps.length + " steps)"),
+      turn.append(el("details", {}, el("summary", {}, "How Khris found this (" + data.steps.length + " steps)"),
         ...data.steps.map(st => el("div", {}, "• " + st.tool + " " + JSON.stringify(st.input)))));
     }
     history.push({ role: "user", content: question }, { role: "assistant", content: data.answer });

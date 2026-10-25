@@ -24,13 +24,13 @@ function recallText(belonging: Belonging, timeline: Sighting[], now: Date): stri
       ? ['Not recalled yet: the camera hasn’t spotted it.']
       : ['Not recalled yet.', 'RecallAI needs a few more reference photos from different angles before it can start tracking this.'];
   }
-  const out = [latest.description || 'Grok hasn’t described this sighting yet.'];
+  const out = [latest.description || 'Khris hasn’t described this sighting yet.'];
   const at = formatClock(microsToDate(latest.seenAtMicros), now);
   if (latest.event === 'left_view') out.push(`It left the camera’s view at ${at} and hasn’t been seen since.`);
   if (previous?.place && previous.place !== latest.place && latest.place) {
     out.push(`Before that it was at ${previous.place}.`);
   }
-  if (latest.verified === -1) out.push('This match hasn’t been checked by Grok yet, so it could be a similar-looking item.');
+  if (latest.verified === -1) out.push('This match hasn’t been checked by Khris yet, so it could be a similar-looking item.');
   return out;
 }
 
@@ -128,7 +128,7 @@ export function TimelineDrawer({ belonging, sightings, now, apiBase, onClose, on
                       </time>
                       <span className="muted"> · {formatRelative(at, now)}</span>
                     </p>
-                    <p className={`tl-desc${s.description ? '' : ' waiting'}`}>{s.description || 'Waiting for Grok…'}</p>
+                    <p className={`tl-desc${s.description ? '' : ' waiting'}`}>{s.description || 'Waiting for Khris…'}</p>
                     <p className="tl-tags">
                       <span className={`badge ${isLeft ? 'badge-left' : 'badge-seen'}`}>{eventLabel(s.event)}</span>
                       {s.verified === -1 && <span className="badge badge-unchecked">Unchecked</span>}

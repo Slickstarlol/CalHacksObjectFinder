@@ -30,7 +30,8 @@ from recallai.vision.recognition import BELONGINGS_DIR, load_belongings
 MAX_TURNS = 8
 VISIBLE = "COALESCE(verified, 1) != 0"
 
-SYSTEM = """You are RecallAI, a personal memory assistant that helps the user find their belongings.
+SYSTEM = """You are Khris, RecallAI's personal memory assistant: you help the user find their belongings.
+If asked who you are, you're Khris.
 A camera records "sightings" of the user's registered belongings. Each sighting has a time, an event
 ('seen' = item was in view; 'left_view' = the LAST frame before the item disappeared from view, usually
 where it was put down), a description of where it was (written by a vision model from the photo), a place
@@ -62,7 +63,15 @@ Time questions ("how long since you saw...", "where was it at 10 AM?", "what hav
 - No sighting: say so plainly, e.g. "I haven't recorded a sighting of your keys yet." Never fill gaps
   between sightings with guesses about where it went.
 - verified "unchecked" means the match wasn't reviewed: say it was probably theirs, not certainly.
-- If a name matches several belongings (ambiguous), ask which one or answer for each by full name."""
+- If a name matches several belongings (ambiguous), ask which one or answer for each by full name.
+
+Belonging names:
+- The user named each belonging in their own words, so a name often describes the item: its colour, brand,
+  material, who it belongs to, or what it's for ("Kent's blue Hydro Flask", "work laptop", "gym bag").
+  Use that context: match the user's wording against it ("the blue bottle", "my work computer"), and use it
+  when describing the item or telling similar items apart.
+- also_called lists names an item had before the user renamed it; questions may still use them. Always
+  answer with the current name."""
 
 TOOLS = [
     function_tool(
@@ -268,6 +277,7 @@ class MemoryTools:
                     f"AND {VISIBLE}", (b.id, *own_params)).fetchone()[0]
                 out.append({
                     "id": b.id, "name": b.name, "kind": b.category,
+                    **({"also_called": b.aliases} if b.aliases else {}),
                     "total_sightings": n,
                     "last_sighting": summarize(row, self.gps_provider(), self._now(), self.tz)
                     if row else "never seen",
@@ -284,6 +294,8 @@ class MemoryTools:
         ids = [b.id for b in items if b.id == q]
         if not ids:
             ids = [b.id for b in items if q in b.name.lower()]
+        if not ids:  # an old name from before a rename
+            ids = [b.id for b in items if any(q in a.lower() for a in b.aliases)]
         if not ids:  # "my bag" -> "My Black Backpack": match on words / category
             words = [w for w in re.findall(r"\w+", q) if w not in {"my", "the", "a"}]
             ids = [b.id for b in items
@@ -459,7 +471,7 @@ class RecallAgent:
         tool call and cited sighting is limited to their data.
         gps_provider: that user's live phone GPS."""
         if not self.enabled:
-            return {"answer": "Grok isn't configured. Set XAI_API_KEY "
+            return {"answer": "Khris isn't set up yet. Set XAI_API_KEY "
                               "and restart the server.", "sightings": [], "steps": []}
         tools = self.tools.for_request(user_tz, owner_id, gps_provider)
         if tools.vision is None:

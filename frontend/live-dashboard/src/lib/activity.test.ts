@@ -21,6 +21,6 @@ describe('activity feed', () => {
   it('describes items', () => {
     expect(activityText({ key: 'k', kind: 'new', sighting: a, receivedAt: 0 })).toBe('Bag spotted');
     expect(activityText({ key: 'k', kind: 'new', sighting: { ...a, event: 'left_view' }, receivedAt: 0 })).toBe('Bag left view');
-    expect(activityText({ key: 'k', kind: 'described', sighting: a, receivedAt: 0 })).toBe('Grok described Bag');
+    expect(activityText({ key: 'k', kind: 'described', sighting: a, receivedAt: 0 })).toBe('Khris described Bag');
   });
 });

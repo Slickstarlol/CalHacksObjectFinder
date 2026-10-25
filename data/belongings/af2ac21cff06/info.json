@@ -1,0 +1,10 @@
+{
+  "id": "af2ac21cff06",
+  "name": "Pen",
+  "category": "toothbrush",
+  "tracking": true,
+  "owner_id": 1,
+  "aliases": [
+    "toothbrush"
+  ]
+}

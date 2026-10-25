@@ -37,7 +37,7 @@ from recallai.api.search import router as search_router
 from recallai.vision.enroll import ANGLES
 from recallai.sync.spacetime_bridge import SpacetimeBridge
 from recallai.ai.watcher import Watcher
-from recallai.vision.people_id import PERSON, SNAP_IOU, person_folder, photos_of
+from recallai.vision.people_id import PERSON, SNAP_IOU, headshot_jpeg, person_folder, photos_of
 from recallai.vision.recognition import box_iou, load_belongings, set_owner
 
 SNAPSHOT_DIR = paths.SNAPSHOT_DIR   # data/snapshots, served (per owner) at /snapshots
@@ -81,10 +81,9 @@ agent = RecallAgent(tools=MemoryTools())
 @asynccontextmanager
 async def lifespan(app):
     Watcher(gps_provider=fresh_gps, interval=WATCH_INTERVAL).start()
-    print("Grok agent:", "ON" if agent.enabled
+    print("Khris (Grok agent):", "ON" if agent.enabled
           else "off (set XAI_API_KEY to enable)")
-    print("Dashboards: cd frontend/dashboard && npm run dev       ->  http://localhost:5173")
-    print("            cd frontend/live-dashboard && npm run dev  ->  http://localhost:5174"
+    print("Dashboard: cd frontend/live-dashboard && npm run dev  ->  http://localhost:5174"
           "  (built: http://localhost:8000/app/)")
     bridge = None
     if os.environ.get("SPACETIME_SYNC", "1").strip() != "0":
@@ -100,9 +99,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="RecallAI", lifespan=lifespan)
-# Both Vite dev servers proxy /api and /snapshots, but allow direct calls too:
-# frontend/dashboard/ (JSX dashboard) runs on :5173, frontend/live-dashboard/
-# (SpacetimeDB live dashboard) on :5174.
+# The Vite dev server proxies /api and /snapshots, but allow direct calls too:
+# frontend/live-dashboard/ runs on :5174 (:5173 kept for other local dev servers).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -226,7 +224,8 @@ def push_live(body: LiveUpdate, _device=Depends(require_device)):
     if body.enroll:
         _apply_enroll(body.enroll)
     # The device sees owner_id: it writes it into the new belonging's info.json.
-    return {"status": "ok", "enroll": enroll_view(), "people_jobs": take_people_jobs()}
+    return {"status": "ok", "enroll": enroll_view(), "people_jobs": take_people_jobs(),
+            "belongings_version": search.belongings_version()}
 
 
 # People named on the live feed. The dashboard sends the box a user
@@ -423,13 +422,13 @@ def describe_person(person_id: int, body: DescribeBody | None = None,
     fresh = result is None
     if fresh:
         if agent.client is None:
-            raise HTTPException(503, "Grok isn't set up: add XAI_API_KEY to .env "
+            raise HTTPException(503, "Khris isn't set up: add XAI_API_KEY to .env "
                                      "and restart the server.")
         try:
             found = describe(agent.client, person, photos,
                              owner=user.get("display_name") or "the user")
         except Exception as e:
-            raise HTTPException(502, f"Grok couldn't describe {person['name']} ({e}).")
+            raise HTTPException(502, f"Khris couldn't describe {person['name']} ({e}).")
         result = save_cache(folder, photos, found)
     saved = bool(fresh and result["description"] and not person["description"]
                  and set_description(person_id, user["id"], result["description"]))
@@ -463,6 +462,20 @@ def device_gps(_device=Depends(require_device)):
         ids = list(_gps)
     by_owner = {str(uid): fix for uid in ids if (fix := fresh_gps(uid))}
     return {"by_owner": by_owner}
+
+
+@app.get("/api/people/{person_id}/avatar")
+def person_avatar(person_id: int, user=Depends(media_user)):
+    """Headshot from the first photo the camera saved of your person (the
+    profile picture): the top of their whole-body crop, squared."""
+    if get_person(person_id, user["id"]) is None:
+        raise HTTPException(404, "Not found")
+    photos = photos_of(person_id)          # newest first -> the last is the first taken
+    jpeg = headshot_jpeg(photos[-1]) if photos else None
+    if jpeg is None:
+        raise HTTPException(404, "No photo yet")
+    return Response(jpeg, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=60"})
 
 
 @app.get("/api/live/frame.jpg")
@@ -528,6 +541,7 @@ def auth_script():
 
 
 @app.post("/gps")
+@app.post("/api/gps")   # same, under /api so the dashboard's dev proxy forwards it
 def update_gps(data: GPSData, user=Depends(current_user)):
     """The signed-in user's phone location (it is theirs, not shared)."""
     with _gps_lock:

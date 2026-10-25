@@ -183,7 +183,7 @@ export async function describePerson(
   }
   if (!res?.ok) {
     const detail = await errorDetail(res);
-    throw new Error(res?.status === 404 ? 'That person no longer exists.' : detail || 'Grok couldn’t describe them.');
+    throw new Error(res?.status === 404 ? 'That person no longer exists.' : detail || 'Khris couldn’t describe them.');
   }
   const body = (await res.json()) as Record<string, unknown>;
   const same = body.same_person;

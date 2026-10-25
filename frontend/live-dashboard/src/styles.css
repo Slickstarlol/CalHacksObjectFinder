@@ -1220,6 +1220,22 @@ button.event-row:hover {
   background: var(--danger-soft);
   color: var(--danger);
 }
+/* A missing belonging's whole row is red, so it stands out from what's in view. */
+.event-missing .event-row {
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  box-shadow: inset 3px 0 0 var(--danger-dot), inset 0 0 0 1px var(--danger-border);
+}
+.event-missing button.event-row:hover {
+  background: color-mix(in srgb, var(--danger-soft) 70%, var(--danger-border));
+}
+.event-missing .event-title,
+.event-missing .event-at {
+  color: var(--danger);
+}
+.event-missing .event-sub {
+  color: color-mix(in srgb, var(--danger) 70%, var(--muted));
+}
 .event-text {
   display: flex;
   flex-direction: column;
@@ -1274,7 +1290,163 @@ button.event-row:hover {
   gap: 16px;
 }
 .grid-cell {
+  position: relative;
   display: flex;
+  container-type: inline-size;
+}
+/* Trash mode (Your belongings): each card is covered by a select button. */
+.section-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 160ms var(--ease), color 160ms var(--ease), background 160ms var(--ease);
+}
+.tool-btn:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.tool-btn:disabled {
+  opacity: 0.5;
+}
+.trash-btn,
+.add-btn {
+  padding: 5px 7px;
+}
+.add-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.enroll-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  animation: event-in 500ms var(--spring) both;
+}
+.enroll-banner.is-done {
+  border-color: var(--live-border);
+  background: var(--live-soft);
+}
+.enroll-banner.is-busy {
+  border-color: var(--warn-border);
+  background: var(--warn-soft);
+}
+.enroll-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.is-done .enroll-icon {
+  background: var(--live);
+  color: #fff;
+}
+.is-busy .enroll-icon {
+  background: var(--warn);
+  color: #fff;
+}
+.enroll-text {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  min-width: 0;
+}
+.enroll-title {
+  font-weight: 600;
+}
+.enroll-sub {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.enroll-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.enroll-step {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  transition: background 200ms var(--ease), transform 300ms var(--spring);
+}
+.enroll-step.is-on {
+  background: var(--accent);
+  transform: scale(1.15);
+}
+.is-done .enroll-step {
+  border-color: var(--live);
+  background: var(--live);
+}
+.trash-btn:hover:not(:disabled),
+.tool-btn-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.tool-btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.pick-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  transition: background 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.pick-hit:hover {
+  background: color-mix(in srgb, var(--danger-soft) 35%, transparent);
+}
+.is-picked .pick-hit {
+  background: color-mix(in srgb, var(--danger-soft) 45%, transparent);
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+/* Bottom-right of the photo (4:3, so 75cqw tall): the top corners hold the
+   left-behind timer and the Seen / Left view badges. */
+.pick-check {
+  position: absolute;
+  top: calc(75cqw - 36px);
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: #fff;
+  transition: transform 300ms var(--spring), background 160ms var(--ease), border-color 160ms var(--ease);
+}
+.is-picked .pick-check {
+  border-color: var(--danger);
+  background: var(--danger);
+  transform: scale(1.08);
 }
 .card {
   position: relative;
@@ -1462,6 +1634,62 @@ button.event-row:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+/* Editable title: above the card-wide history button (.card-hit, z-index 4). */
+.card-name {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.card-name-btn {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: inherit;
+  letter-spacing: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rename-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 160ms var(--ease), color 160ms var(--ease), background 160ms var(--ease);
+}
+.card:hover .rename-btn,
+.card:focus-within .rename-btn,
+.rename-btn:focus-visible {
+  opacity: 1;
+}
+.rename-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+@media (hover: none) {
+  .rename-btn {
+    opacity: 1;
+  }
+}
+.card-name .name-input {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+}
+.card-name-error {
+  flex-basis: 100%;
+  color: var(--danger);
 }
 .card-head h3 {
   overflow: hidden;
@@ -1970,6 +2198,21 @@ button.thumb {
   font-size: 15px;
   font-weight: 700;
 }
+/* Each person's own color (--pc, lib/personColor.ts), same as their box on the live image. */
+.person-tile {
+  overflow: hidden;
+  background: color-mix(in srgb, var(--pc, #9b87ff) 18%, var(--surface));
+  color: color-mix(in srgb, var(--pc, #9b87ff) 75%, var(--text));
+  outline: 2px solid var(--pc, light-dark(#8f7bff, #b6a9ff));
+  outline-offset: -2px;
+}
+.person-avatar {
+  border-radius: inherit;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .person-body {
   display: flex;
   flex: 1;
@@ -2401,10 +2644,10 @@ button.person-tile:hover {
   pointer-events: none;
 }
 .lock-person .brackets {
-  --b: light-dark(#8f7bff, #b6a9ff);
+  --b: var(--pc, light-dark(#8f7bff, #b6a9ff));
 }
 .lock-person .lock-tag {
-  background: color-mix(in srgb, #2a1f6b 88%, transparent);
+  background: color-mix(in srgb, var(--pc-tag, #2a1f6b) 88%, transparent);
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
 /* The person whose row is hovered or being named. */

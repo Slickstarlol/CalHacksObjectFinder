@@ -3,11 +3,13 @@ import { useFlash } from '../hooks/useFlash';
 import { eventLabel, splitNearby, thumbUrl } from '../lib/sightings';
 import { formatClock, formatFull, formatRelative, microsToDate, minutesSince } from '../lib/time';
 import { percent } from '../lib/live';
-import { HourglassIcon, PinIcon, RecallAvatar } from './Icons';
+import { useEffect, useRef, useState } from 'react';
+import { HourglassIcon, PencilIcon, PinIcon, RecallAvatar } from './Icons';
+import { NameInput } from './NameInput';
 import { Thumb } from './Thumb';
 
 /** Enrollment collects this many camera angles (backend vision/enroll.py ANGLES). */
-export const ENROLL_ANGLES = 5;
+export const ENROLL_ANGLES = 3;
 /** A "seen" sighting newer than this gets the scan-sweep highlight. */
 const FRESH_MS = 5 * 60_000;
 
@@ -21,7 +23,97 @@ type Props = {
   /** Minutes out of view before the card shows the left-behind timer. */
   leftAfter?: number;
   onSelect: (id: string) => void;
+  /** Saves a new name (double-click it, or the pencil). Omitted -> read-only. */
+  onRename?: (id: string, name: string) => Promise<unknown>;
 };
+
+/** A single click on the name waits this long, so a double-click (rename) doesn't also open history. */
+const CLICK_DELAY = 250;
+
+/** The card title: click for history, double-click / pencil / Enter / F2 to rename. */
+function CardName({
+  belonging,
+  onSelect,
+  onRename,
+}: {
+  belonging: Belonging;
+  onSelect: (id: string) => void;
+  onRename?: (id: string, name: string) => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  // Shown until SpacetimeDB mirrors the new name back.
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (pending !== null && belonging.name === pending) setPending(null);
+  }, [belonging.name, pending]);
+
+  const shown = pending ?? belonging.name;
+  if (!onRename) return <h3>{shown}</h3>;
+
+  const save = (name: string | null) => {
+    setEditing(false);
+    if (!name || name === shown) return;
+    setError(null);
+    setPending(name);
+    onRename(belonging.id, name).catch((err: unknown) => {
+      setPending(null);
+      setError(err instanceof Error ? err.message : 'Couldn’t save the name.');
+    });
+  };
+
+  return (
+    <div className="card-name">
+      {editing ? (
+        <NameInput initial={shown} label={`New name for ${shown}`} placeholder="Name this item" onDone={save} />
+      ) : (
+        <>
+          <h3>
+            <button
+              type="button"
+              className="name-btn card-name-btn"
+              title="Double-click to rename"
+              aria-label={`${shown}. Press Enter or F2 to rename`}
+              onClick={e => {
+                if (e.detail > 1) return;
+                clearTimeout(timer.current);
+                timer.current = setTimeout(() => onSelect(belonging.id), CLICK_DELAY);
+              }}
+              onDoubleClick={() => {
+                clearTimeout(timer.current);
+                setEditing(true);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === 'F2') {
+                  e.preventDefault();
+                  setEditing(true);
+                }
+              }}
+            >
+              {shown}
+            </button>
+          </h3>
+          <button
+            type="button"
+            className="rename-btn"
+            onClick={() => setEditing(true)}
+            aria-label={`Rename ${shown}`}
+            title="Rename"
+          >
+            <PencilIcon />
+          </button>
+        </>
+      )}
+      {error && (
+        <span className="card-name-error small" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function EnrollRing({ saved }: { saved: number }) {
   const r = 26;
@@ -53,7 +145,7 @@ function EnrollRing({ saved }: { saved: number }) {
   );
 }
 
-export function BelongingCard({ belonging, latest, now, apiBase, live, leftAfter = 15, onSelect }: Props) {
+export function BelongingCard({ belonging, latest, now, apiBase, live, leftAfter = 15, onSelect, onRename }: Props) {
   const flashKey = latest
     ? `${String(latest.id)}|${latest.description}|${latest.verified}|${latest.event}`
     : '';
@@ -127,7 +219,7 @@ export function BelongingCard({ belonging, latest, now, apiBase, live, leftAfter
               <span className={`badge ${left ? 'badge-left' : 'badge-seen'}`}>{eventLabel(latest.event)}</span>
             )}
             {latest?.verified === -1 && (
-              <span className="badge badge-unchecked" title="Grok hasn’t verified this match yet">
+              <span className="badge badge-unchecked" title="Khris hasn’t verified this match yet">
                 Unchecked
               </span>
             )}
@@ -136,7 +228,7 @@ export function BelongingCard({ belonging, latest, now, apiBase, live, leftAfter
       </div>
       <div className="card-body">
         <header className="card-head">
-          <h3>{belonging.name}</h3>
+          <CardName belonging={belonging} onSelect={onSelect} onRename={onRename} />
           <span className="chip mono">{category}</span>
         </header>
         {latest && (
@@ -165,7 +257,7 @@ export function BelongingCard({ belonging, latest, now, apiBase, live, leftAfter
             </span>
             {latest ? (
               <span className={`bubble-text${latest.description ? '' : ' waiting'}`}>
-                {latest.description || 'Waiting for Grok…'}
+                {latest.description || 'Waiting for Khris…'}
               </span>
             ) : (
               <span className="bubble-text waiting">

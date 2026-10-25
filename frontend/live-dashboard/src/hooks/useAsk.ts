@@ -30,7 +30,7 @@ export function useAsk(apiBase: string, fetchImpl: typeof fetch = (...a) => fetc
         ]);
         setEntries(prev => prev.map(e => (e.id === id ? { ...e, status: 'done', response: res } : e)));
       } catch (err) {
-        const message = err instanceof AskError ? err.message : 'Something went wrong asking Grok.';
+        const message = err instanceof AskError ? err.message : 'Something went wrong asking Khris.';
         setEntries(prev => prev.map(e => (e.id === id ? { ...e, status: 'error', error: message } : e)));
       }
     },

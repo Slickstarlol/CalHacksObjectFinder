@@ -181,11 +181,14 @@ class Belonging:
     category: str
     folder: Path
     reference_paths: list = field(default_factory=list)
-    # False while the camera is still collecting the five angles.
+    # False while the camera is still collecting the enrollment angles.
     tracking: bool = True
     # users.id of the account that registered it (info.json "owner_id").
     # None = registered before accounts existed; the first account claims it.
     owner_id: int | None = None
+    # Names it had before a rename, newest first (info.json "aliases"), so
+    # "where's my old bag?" still finds it.
+    aliases: list = field(default_factory=list)
 
 
 def _owner_value(info):
@@ -227,6 +230,29 @@ def set_owner(folder, owner_id, only_if_ownerless=True):
     return True
 
 
+MAX_ALIASES = 5
+
+
+def set_name(folder, name):
+    """Rename a belonging in its info.json; the old name joins "aliases".
+    Returns the old name, or None if the folder can't be read."""
+    info_path = Path(folder) / "info.json"
+    try:
+        info = json.loads(info_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    old = info.get("name") or ""
+    if old != name:
+        aliases = [a for a in [old, *info.get("aliases", [])]
+                   if isinstance(a, str) and a and a.lower() != name.lower()]
+        info["aliases"] = list(dict.fromkeys(aliases))[:MAX_ALIASES]
+        info["name"] = name
+        tmp = info_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(info, indent=2), encoding="utf-8")
+        tmp.replace(info_path)
+    return old
+
+
 def load_belongings(base_dir=BELONGINGS_DIR):
     """Every belonging on disk, all owners. Per-user code filters the result
     with recallai.owners.owned(items, owner_id)."""
@@ -255,6 +281,7 @@ def load_belongings(base_dir=BELONGINGS_DIR):
                 reference_paths=refs,
                 tracking=bool(info.get("tracking", True)),
                 owner_id=_owner_value(info),
+                aliases=[a for a in info.get("aliases", []) if isinstance(a, str) and a],
             )
         )
     return items
@@ -329,7 +356,7 @@ class BelongingMatcher:
         self.skipped = []          # registered but not ready to track
         self._refs = {}            # belonging_id -> (N, D) embeddings
         for item in load_belongings(self.base_dir):
-            # An enrollment joins the tracker only after all five angles,
+            # An enrollment joins the tracker only after all its angles,
             # when its info.json flips tracking on.
             if not item.tracking or not item.reference_paths:
                 self.skipped.append(item)

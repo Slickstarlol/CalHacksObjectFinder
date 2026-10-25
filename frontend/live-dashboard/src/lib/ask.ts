@@ -97,7 +97,7 @@ export async function askRecall(
     const detail = detailOf(body);
     if (res.status === 502) {
       throw new AskError(
-        `Grok couldn't answer right now${detail ? `: ${detail.replace(/^Grok request failed:\s*/, '')}` : '.'}`,
+        `Khris couldn't answer right now${detail ? `: ${detail.replace(/^(Grok|Khris) request failed:\s*/, '')}` : '.'}`,
         502
       );
     }
@@ -110,7 +110,7 @@ export async function askRecall(
   return normalizeResponse(body);
 }
 
-/** Short human summary of a tool step for the "How Grok found this" list. */
+/** Short human summary of a tool step for the "How Khris found this" list. */
 export function describeStep(step: AskStep): string {
   const input = step.input;
   if (input && typeof input === 'object') {
