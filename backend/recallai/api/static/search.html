@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecallAI Search</title>
+<style>
+:root { --fg:#1d1d1f; --muted:#666; --line:#ddd; --accent:#0a7d4f; --warn:#b35c00; --bg:#fafafa; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, Arial, sans-serif; color: var(--fg); background: var(--bg);
+       max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+nav { margin-bottom: 16px; font-size: 14px; }
+a { color: #0645ad; }
+h1 { margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.searchbar { display: flex; gap: 8px; }
+.searchbar input { flex: 1; padding: 12px 14px; font-size: 16px; border: 1px solid var(--line); border-radius: 8px; }
+.searchbar button { padding: 12px 18px; font-size: 16px; border: 0; border-radius: 8px; background: var(--fg); color: #fff; cursor: pointer; }
+#status { color: var(--muted); font-size: 14px; }
+#mine { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin: 16px 0 24px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 10px; cursor: pointer; text-align: left; font: inherit; }
+.tile img { width: 100%; height: 100px; object-fit: contain; background: #f0f0f0; border-radius: 6px; }
+.tile .ph { height: 100px; display: grid; place-items: center; background: #f0f0f0; border-radius: 6px; color: var(--muted); font-size: 13px; }
+.tile b { display: block; margin-top: 6px; }
+.tile small { color: var(--muted); display: block; line-height: 1.4; }
+.tile .where { font-style: italic; }
+.tile .view { color: #0645ad; font-size: 13px; }
+.when { color: var(--muted); }
+h3.group { font-size: 14px; color: var(--muted); margin: 18px 0 8px; font-weight: 600; }
+.tile .note { color: var(--warn); }
+.lookup { display:flex; gap:12px; border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:10px; font-size:13px; line-height:1.5; }
+.lookup img { width:120px; height:90px; object-fit:cover; border-radius:6px; }
+.lookup b { font-size:14px; }
+.card { border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 16px; margin-bottom: 14px; }
+.card .row { display: flex; gap: 14px; flex-wrap: wrap; }
+.card .crop { width: 180px; max-width: 100%; height: 160px; object-fit: contain; background: #f0f0f0; border-radius: 8px; }
+.card .info { flex: 1; min-width: 200px; font-size: 14px; line-height: 1.6; }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; color: #fff; background: var(--accent); }
+.badge.left { background: var(--warn); }
+.badge.generic { background: #888; }
+details { margin-top: 10px; }
+details img { width: 100%; border-radius: 8px; margin-top: 8px; }
+.ask { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:22px; }
+.ask h2 { font-size:16px; margin:0 0 10px; }
+.ask .examples { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.ask .examples button { font-size:13px; padding:5px 10px; border:1px solid var(--line); border-radius:99px; background:#f4f4f4; cursor:pointer; }
+#chat .q { font-weight:600; margin:14px 0 4px; }
+#chat .a { line-height:1.55; white-space:pre-wrap; }
+#chat .a.thinking { color:var(--muted); font-style:italic; }
+#chat .refs { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+#chat .refs figure { margin:0; width:120px; font-size:11px; color:var(--muted); }
+#chat .refs img { width:120px; height:90px; object-fit:cover; border-radius:6px; display:block; }
+#chat details { font-size:12px; color:var(--muted); margin-top:6px; }
+.cite { font-size:12px; color:var(--accent); font-weight:600; }
+#alerts .alert { display:flex; gap:12px; align-items:center; border-radius:12px; padding:12px; margin-bottom:10px; background:#fff4e5; border:1px solid #f0c27a; }
+#alerts .alert.high { background:#fdecea; border-color:#f1a199; }
+#alerts .alert img { width:64px; height:64px; object-fit:cover; border-radius:8px; }
+#alerts .alert p { margin:0; flex:1; font-size:14px; line-height:1.45; }
+#alerts .alert button { border:0; background:transparent; font-size:20px; cursor:pointer; color:var(--muted); }
+.desc { font-style:italic; }
+section.label { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:6px 0; }
+</style>
+</head>
+<body>
+
+<nav><a href="/">GPS</a> · Search</nav>
+<h1>RecallAI</h1>
+<p class="sub">Where did I leave it?</p>
+
+<div id="alerts"></div>
+
+<div class="ask">
+  <h2>Ask RecallAI</h2>
+  <div class="searchbar">
+    <input id="askq" type="text" placeholder="Where did I leave my mouse?" autocomplete="off">
+    <button id="askgo">Ask</button>
+  </div>
+  <div class="examples">
+    <button>Where's my mouse?</button>
+    <button>What did I have with me this morning?</button>
+    <button>Did I leave anything behind?</button>
+  </div>
+  <div id="chat"></div>
+</div>
+
+<section class="label">Browse</section>
+
+<div class="searchbar">
+  <input id="query" type="search" placeholder="e.g. my bag, mouse" autocomplete="off">
+  <button id="go">Search</button>
+</div>
+
+<p id="status">Loading your belongings…</p>
+<div id="mine"></div>
+<div id="result"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function el(tag, attrs = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k.startsWith("on")) n[k] = v; else n.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) n.append(c);
+  return n;
+}
+
+// ---------------- Time labels ----------------
+// The server's timestamp is the truth; the browser only re-renders the label.
+// Same rules as temporal_memory.format_relative (floored, "just now" < 10 s).
+let clockSkew = 0;  // server clock - browser clock, ms
+const plural = (n, unit) => n + " " + unit + (n === 1 ? "" : "s");
+function relative(iso) {
+  const t = Date.parse(iso);
+  if (!iso || isNaN(t)) return "at an unknown time";
+  const s = Math.floor((Date.now() + clockSkew - t) / 1000);
+  if (s < -120) return "at an unknown time";   // future timestamp: bad data
+  if (s < 10) return "just now";
+  if (s < 60) return s + " seconds ago";
+  if (s < 3600) return plural(Math.floor(s / 60), "minute") + " ago";
+  if (s < 86400) {
+    const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+    return plural(h, "hour") + (m ? " " + plural(m, "minute") : "") + " ago";
+  }
+  return plural(Math.floor(s / 86400), "day") + " ago";
+}
+const ago = relative;
+const userTZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; }
+                        catch (e) { return null; } })();
+function absolute(iso) {  // "today at 11:42 AM", in the browser's time zone
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return "";
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const now = new Date(Date.now() + clockSkew);
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const label = diff === 0 ? "today" : diff === 1 ? "yesterday"
+    : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric",
+        ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+  return label + " at " + time;
+}
+// <span data-ts="..."> labels are re-rendered from the stored timestamp on a
+// timer: no network, and the timestamp itself never changes.
+function liveTime(iso, prefix = "") {
+  const n = el("span", { class: "when", "data-ts": iso || "", "data-prefix": prefix });
+  n.textContent = prefix + relative(iso);
+  n.title = absolute(iso);
+  return n;
+}
+function refreshTimes() {
+  for (const n of document.querySelectorAll("[data-ts]")) {
+    const text = n.dataset.prefix + relative(n.dataset.ts);
+    if (n.textContent !== text) n.textContent = text;
+  }
+}
+setInterval(refreshTimes, 15000);   // seconds-level labels only exist for the first minute
+
+async function loadMine() {
+  try {
+    const items = await (await fetch("/api/belongings")).json();
+    const box = $("mine");
+    box.innerHTML = "";
+    if (!items.length) {
+      $("status").textContent = "No belongings registered yet. Run: python -m recallai.vision.register";
+      return;
+    }
+    $("status").textContent = "Your belongings - tap one:";
+    const withNow = items.find(b => b.last_seen && b.last_seen.now);
+    if (withNow) clockSkew = Date.parse(withNow.last_seen.now) - Date.now();
+    for (const b of items) {
+      const ls = b.last_seen || {};
+      const thumb = ls.crop_url || ls.image_url
+        ? el("img", { src: ls.crop_url || ls.image_url, alt: b.name })
+        : el("div", { class: "ph" }, !b.photos ? "needs photos"
+            : ls.last_seen_at ? "image missing" : "not seen yet");
+      const lines = [];
+      if (ls.last_seen_at) {
+        const line = el("small", {}, liveTime(ls.last_seen_at, "Last seen "));
+        const where = ls.location_description || ls.place;
+        if (where) line.append(" · ", el("span", { class: "where" }, where));
+        lines.push(line);
+        if (ls.verified !== true) lines.push(el("small", { class: "note" }, "Unverified match"));
+        if (ls.recording_gap) lines.push(el("small", { class: "note" },
+          "Camera stopped recording while it was in view"));
+        lines.push(el("small", { class: "view" }, "View last sighting"));
+      } else if (ls.status === "unavailable") {
+        lines.push(el("small", { class: "note" }, "Timestamp unavailable"));
+      } else {
+        lines.push(el("small", {}, b.photos ? "Not seen yet" : "0 ref photos"));
+      }
+      box.append(el("button", { class: "tile", onclick: () => show(b.name, b.id) },
+        thumb, el("b", {}, b.name), ...lines));
+    }
+  } catch (e) {
+    $("status").textContent = "Could not reach the server";
+  }
+}
+
+function card(s) {
+  const kind = !s.belonging_id ? ["generic", "generic " + s.object_name]
+             : s.event === "left_view" ? ["left", "last view before it left"]
+             : ["", "seen"];
+  const info = el("div", { class: "info" },
+    el("span", { class: "badge " + kind[0] }, kind[1]), el("br"),
+    el("b", {}, s.label), " · ", liveTime(s.timestamp), el("br"),
+    absolute(s.timestamp) || "Timestamp unavailable", el("br"));
+  if (s.description) info.append(el("span", { class: "desc" }, s.description), el("br"));
+  if (s.nearby.length) info.append("Near: " + s.nearby.join(", "), el("br"));
+  if (s.match_score != null) info.append("Match: " + Math.round(s.match_score * 100) + "%", el("br"));
+  if (s.maps_url) info.append(
+    "GPS ±" + Math.round(s.accuracy) + " m · ",
+    el("a", { href: s.maps_url, target: "_blank", rel: "noopener" }, "map"));
+
+  const img = s.crop_path || s.image_path;
+  const full = el("details", {}, el("summary", {}, "Full photo"),
+    el("img", { src: "/" + s.image_path, alt: s.label, loading: "lazy" }));
+  return el("div", { class: "card" },
+    el("div", { class: "row" }, el("img", { class: "crop", src: "/" + img, alt: s.label }), info),
+    full);
+}
+
+async function show(q, belongingId) {
+  $("result").innerHTML = "";
+  $("status").textContent = "Searching…";
+  const url = belongingId
+    ? "/api/sightings?limit=10&belonging_id=" + encodeURIComponent(belongingId)
+    : "/api/sightings?limit=10&q=" + encodeURIComponent(q);
+  try {
+    const rows = await (await fetch(url)).json();
+    if (!Array.isArray(rows) || !rows.length) {
+      $("status").textContent = 'No sightings for "' + q + '" yet';
+      return;
+    }
+    $("status").textContent = rows.length + ' sighting(s) for "' + q + '", newest first';
+    $("result").append(el("h3", { class: "group" }, "Last seen"), card(rows[0]));
+    if (rows.length > 1) {
+      $("result").append(el("h3", { class: "group" }, "Earlier sightings"));
+      for (const s of rows.slice(1)) $("result").append(card(s));
+    }
+  } catch (e) {
+    $("status").textContent = "Search failed";
+  }
+}
+
+function runSearch() {
+  const q = $("query").value.trim();
+  if (q) show(q); else $("status").textContent = "Type a name";
+}
+$("go").onclick = runSearch;
+$("query").addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
+loadMine();
+
+// ---------------- Ask RecallAI (Grok agent) ----------------
+const history = [];
+async function ask(question) {
+  question = (question || "").trim();
+  if (!question) return;
+  $("askq").value = "";
+  const a = el("div", { class: "a thinking" }, "Looking through your memories…");
+  const turn = el("div", {}, el("div", { class: "q" }, question), a);
+  $("chat").prepend(turn);
+  try {
+    const r = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, history, timezone: userTZ }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "request failed");
+    a.className = "a";
+    a.textContent = "";
+    // render [#12] citations as small tags
+    for (const part of data.answer.split(/(\[#\d+\])/)) {
+      a.append(/^\[#\d+\]$/.test(part) ? el("span", { class: "cite" }, part) : part);
+    }
+    if (data.sightings.length) {
+      const refs = el("div", { class: "refs" });
+      for (const s of data.sightings) {
+        refs.append(el("figure", {},
+          el("img", { src: "/" + (s.crop_path || s.image_path), alt: "" }),
+          "#" + s.id + " · ", liveTime(s.timestamp)));
+      }
+      turn.append(refs);
+    }
+    for (const lk of data.lookups || []) turn.append(lookupCard(lk));
+    if (data.steps.length) {
+      turn.append(el("details", {}, el("summary", {}, "How Grok found this (" + data.steps.length + " steps)"),
+        ...data.steps.map(st => el("div", {}, "• " + st.tool + " " + JSON.stringify(st.input)))));
+    }
+    history.push({ role: "user", content: question }, { role: "assistant", content: data.answer });
+  } catch (e) {
+    a.className = "a"; a.textContent = "Sorry - " + e.message;
+  }
+}
+// "Where was X at 10 AM?": requested time vs the sighting actually recorded.
+function lookupCard(lk) {
+  const box = el("div", { class: "lookup" });
+  const img = lk.crop_url || lk.image_url;
+  if (img) box.append(el("img", { src: img, alt: "" }));
+  const info = el("div", {}, el("b", {}, lk.belonging_name || "Item"), el("br"),
+    "Requested: " + (absolute(lk.requested_at) || lk.requested_at), el("br"));
+  if (lk.seen_at || lk.last_seen_at) {
+    const at = lk.seen_at || lk.last_seen_at;
+    const off = lk.seconds_before_requested != null ? -lk.seconds_before_requested : lk.offset_seconds;
+    info.append((lk.seconds_before_requested != null ? "Closest earlier sighting: " : "Closest sighting: ")
+      + absolute(at), el("br"),
+      off === 0 ? "At the requested time"
+        : duration(Math.abs(off)) + (off < 0 ? " before" : " after") + " the requested time", el("br"));
+    if (lk.location_description) info.append(el("span", { class: "desc" }, lk.location_description), el("br"));
+    if (!img) info.append("Image missing", el("br"));
+    if (lk.verified !== true) info.append("Unverified match", el("br"));
+  } else {
+    info.append(lk.message || "No matching historical record", el("br"));
+    if (lk.later_observation) info.append("Next sighting after that: "
+      + absolute(lk.later_observation.seen_at) + " (later than requested)");
+  }
+  box.append(info);
+  return box;
+}
+function duration(secs) {   // like temporal_memory.format_duration
+  const s = Math.floor(secs);
+  if (s < 60) return plural(s, "second");
+  if (s < 3600) return plural(Math.floor(s / 60), "minute");
+  if (s < 86400) { const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+    return plural(h, "hour") + (m ? " " + plural(m, "minute") : ""); }
+  return plural(Math.floor(s / 86400), "day");
+}
+
+$("askgo").onclick = () => ask($("askq").value);
+$("askq").addEventListener("keydown", e => { if (e.key === "Enter") ask($("askq").value); });
+document.querySelectorAll(".examples button").forEach(b => b.onclick = () => ask(b.textContent));
+
+// ---------------- Proactive alerts ----------------
+async function loadAlerts() {
+  try {
+    const alerts = await (await fetch("/api/alerts")).json();
+    const box = $("alerts");
+    box.innerHTML = "";
+    for (const al of alerts) {
+      box.append(el("div", { class: "alert " + al.urgency },
+        al.crop_path ? el("img", { src: "/" + al.crop_path, alt: "" }) : null,
+        el("p", {}, el("b", {}, al.urgency === "high" ? "Left behind? " : "Heads up: "), al.message),
+        el("button", { title: "Dismiss", onclick: async () => {
+          await fetch("/api/alerts/" + al.id + "/dismiss", { method: "POST" }); loadAlerts(); } }, "×")));
+    }
+  } catch (e) { /* server offline */ }
+}
+loadAlerts();
+setInterval(loadAlerts, 20000);
+setInterval(() => { if (!document.hidden) loadMine(); }, 60000);
+</script>
+</body>
+</html>
