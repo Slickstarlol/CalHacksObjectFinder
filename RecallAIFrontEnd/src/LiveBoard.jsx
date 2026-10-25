@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import Onboarding from './Onboarding'
 import Shot from './Shot'
 import { ago, eventLabel, groupDetections, mediaUrl, when } from './format'
 import { getJSON, sendJSON } from './api'
+import { displayName, loadNicknames } from './nicknames'
 
 function scorePercent(score) {
   if (score == null || Number.isNaN(Number(score))) return null
@@ -24,7 +26,8 @@ export default function LiveBoard({
   const [trailState, setTrailState] = useState({ id: null, rows: null })
   const [enroll, setEnroll] = useState(null)
   const [enrollError, setEnrollError] = useState('')
-  const [adding, setAdding] = useState(false)
+  const [flowOpen, setFlowOpen] = useState(false)
+  const [nicknames, setNicknames] = useState(loadNicknames)
   const finished = useRef('')
 
   if (online !== frameWhileOnline) {
@@ -86,21 +89,6 @@ export default function LiveBoard({
     onEnrolled?.()
   }, [enroll, onEnrolled])
 
-  async function startEnroll() {
-    setAdding(true)
-    setEnrollError('')
-    try {
-      setEnroll(await sendJSON('/api/enroll/start'))
-    } catch (err) {
-      const missing = err.message === 'Not Found'
-      setEnrollError(missing
-        ? 'Add is not on this server yet. Stop it and start it again, then click Add.'
-        : err.message)
-    } finally {
-      setAdding(false)
-    }
-  }
-
   async function cancelEnroll() {
     setEnrollError('')
     try {
@@ -130,11 +118,24 @@ export default function LiveBoard({
   const others = groupDetections(live?.detections || [])
   const selected = (belongings || []).find((item) => item.id === selectedId) || null
   const cameraAlt = inView.length
-    ? `Live camera. Yours in view: ${inView.map((item) => item.name).join(', ')}`
+    ? `Live camera. Yours in view: ${inView.map((item) => displayName(nicknames, item.belonging_id, item.name)).join(', ')}`
     : 'Live camera from the RecallAI vision loop'
 
   return (
     <>
+      {flowOpen && (
+        <Onboarding
+          enroll={enroll}
+          setEnroll={setEnroll}
+          frameUrl={shownFrame}
+          online={online}
+          onClose={() => {
+            setFlowOpen(false)
+            setNicknames(loadNicknames())
+          }}
+        />
+      )}
+
       {alerts.length > 0 && (
         <div className="alerts" aria-label="Alerts">
           {alerts.map((alert) => (
@@ -194,19 +195,22 @@ export default function LiveBoard({
               )}
               <button
                 type="button"
-                className={enroll?.active || adding ? 'btn add-btn is-on' : 'btn add-btn'}
-                disabled={!online || enroll?.active || adding}
-                aria-pressed={enroll?.active === true}
-                onClick={startEnroll}
+                className={enroll?.active || flowOpen ? 'btn add-btn is-on' : 'btn add-btn'}
+                disabled={!online || enroll?.active || flowOpen}
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setEnrollError('')
+                  setFlowOpen(true)
+                }}
               >
-                {enroll?.active || adding ? 'Adding' : 'Add'}
+                {enroll?.active || flowOpen ? 'Adding' : 'Add'}
               </button>
-              {(enroll?.active || enroll?.phase === 'done') && (
+              {!flowOpen && enroll?.active && (
                 <div className="enroll-banner" role="status">
                   <p>{enroll.message}</p>
                   <p className="enroll-count">
                     {enroll.saved || 0} of {enroll.needed || 5} angles
-                    {enroll.name ? ` · ${enroll.name}` : ''}
+                    {enroll.name ? ` · ${displayName(nicknames, enroll.belonging_id, enroll.name)}` : ''}
                   </p>
                   {enroll.active && (
                     <button type="button" className="btn ghost" onClick={cancelEnroll}>
@@ -245,7 +249,7 @@ export default function LiveBoard({
                     return (
                       <li key={item.belonging_id || item.name} className="track yours">
                         <div>
-                          <b>{item.name}</b>
+                          <b>{displayName(nicknames, item.belonging_id, item.name)}</b>
                           <span>{item.category}</span>
                         </div>
                         {percent != null && (
@@ -303,7 +307,7 @@ export default function LiveBoard({
           </p>
         ) : belongings.length === 0 ? (
           <p className="empty">
-            Nothing is registered yet. Add a belonging with <code>python register.py</code>.
+            Nothing is registered yet. Press <b>Add</b> on the camera to set one up.
           </p>
         ) : (
           <div className="loc-grid">
@@ -331,7 +335,7 @@ export default function LiveBoard({
                       alt={last ? `Last photo of ${item.name}` : `${item.name} has not been seen`}
                     />
                     <span className="loc-copy">
-                      <b>{item.name}</b>
+                      <b>{displayName(nicknames, item.id, item.name)}</b>
                       <span className="kind">{item.category}</span>
                       {last ? (
                         <>
@@ -378,11 +382,11 @@ export default function LiveBoard({
 
         {selected && (
           <div className="trail-wrap">
-            <h3>Movement of {selected.name}</h3>
+            <h3>Movement of {displayName(nicknames, selected.id, selected.name)}</h3>
             {trail === null ? (
               <p className="muted">Loading the trail…</p>
             ) : trail.length === 0 ? (
-              <p className="muted">No sightings for {selected.name} yet.</p>
+              <p className="muted">No sightings for {displayName(nicknames, selected.id, selected.name)} yet.</p>
             ) : (
               <ol className="trail">
                 {trail.map((row) => (
