@@ -18,4 +18,5 @@ export default __t.row({
   knownSince: __t.string().name("known_since"),
   createdAtMicros: __t.i64().name("created_at_micros"),
   updatedAtMicros: __t.i64().name("updated_at_micros"),
+  owner: __t.string(),
 });

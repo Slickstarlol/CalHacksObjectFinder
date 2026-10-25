@@ -183,9 +183,53 @@ class Belonging:
     reference_paths: list = field(default_factory=list)
     # False while the camera is still collecting the five angles.
     tracking: bool = True
+    # users.id of the account that registered it (info.json "owner_id").
+    # None = registered before accounts existed; the first account claims it.
+    owner_id: int | None = None
+
+
+def _owner_value(info):
+    value = info.get("owner_id")
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def read_owner(folder):
+    """Current owner of a belonging folder (re-read from info.json), or None."""
+    try:
+        info = json.loads((Path(folder) / "info.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return _owner_value(info)
+
+
+def set_owner(folder, owner_id, only_if_ownerless=True):
+    """Write owner_id into a belonging's info.json. Returns True if changed.
+
+    With only_if_ownerless (the default) an item that already has an owner
+    is never handed to someone else."""
+    info_path = Path(folder) / "info.json"
+    try:
+        info = json.loads(info_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    current = _owner_value(info)
+    if current == owner_id or (only_if_ownerless and current is not None):
+        return False
+    info["owner_id"] = owner_id
+    tmp = info_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(info, indent=2), encoding="utf-8")
+    tmp.replace(info_path)
+    return True
 
 
 def load_belongings(base_dir=BELONGINGS_DIR):
+    """Every belonging on disk, all owners. Per-user code filters the result
+    with recallai.owners.owned(items, owner_id)."""
     base_dir = Path(base_dir)
     items = []
     if not base_dir.exists():
@@ -194,7 +238,10 @@ def load_belongings(base_dir=BELONGINGS_DIR):
         info_path = folder / "info.json"
         if not info_path.is_file():
             continue
-        info = json.loads(info_path.read_text(encoding="utf-8"))
+        try:
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue  # half-written file; it will be read next time
         refs = sorted(
             p for p in folder.iterdir()
             if p.suffix.lower() in IMAGE_SUFFIXES and p.stem.startswith("reference")
@@ -207,6 +254,7 @@ def load_belongings(base_dir=BELONGINGS_DIR):
                 folder=folder,
                 reference_paths=refs,
                 tracking=bool(info.get("tracking", True)),
+                owner_id=_owner_value(info),
             )
         )
     return items
@@ -233,6 +281,7 @@ class Match:
     name: str
     category: str
     score: float
+    owner_id: int | None = None
 
 
 class BelongingMatcher:
@@ -342,7 +391,7 @@ class BelongingMatcher:
         if score < self.threshold:
             return None
         b = next(b for b in self.belongings if b.id == bid)
-        return Match(b.id, b.name, b.category, score)
+        return Match(b.id, b.name, b.category, score, b.owner_id)
 
     def match(self, crop_bgr, category):
         return self._best(self.scores(crop_bgr, category))

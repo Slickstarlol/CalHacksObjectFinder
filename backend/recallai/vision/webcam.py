@@ -3,6 +3,10 @@
 Run it with:  python -m recallai.vision.webcam  [--camera 0]
 Start the server first (python -m uvicorn recallai.api.server:app --port 8000)
 so the dashboard shows the live frame and phone GPS is attached (optional).
+
+The camera is a trusted device, not a user: it recognizes every account's
+belongings and each sighting is tagged with the matched belonging's owner
+(and that owner's phone GPS). See docs/AUTH.md.
 """
 
 import argparse
@@ -17,7 +21,8 @@ from ultralytics import YOLO
 from recallai import paths
 from recallai.vision.enroll import AngleCapture, save_angle_default
 from recallai.ai.interpreter import Interpreter
-from recallai.vision.live_feed import LIVE_URL, PUBLISH_EVERY, LivePublisher
+from recallai.vision.live_feed import (LIVE_URL, PUBLISH_EVERY, SERVER_URL, LivePublisher,
+                                      device_headers)
 from recallai.vision.recognition import BelongingMatcher, crop_box, load_embedder
 from recallai.vision.recorder import Detection, SightingRecorder
 
@@ -25,7 +30,7 @@ from recallai.vision.recorder import Detection, SightingRecorder
 # Configuration
 # ---------------------------------
 CAMERA_INDEX = 0
-GPS_URL = "http://127.0.0.1:8000/gps/latest"
+GPS_URL = SERVER_URL + "/api/device/gps"   # every account's fresh phone GPS
 SAVE_INTERVAL = 15      # seconds between 'seen' snapshots per belonging
 GONE_AFTER = 5          # seconds out of view before 'left_view' is saved
 RECOGNIZE_EVERY = 0.5   # seconds between recognition passes (CLIP is slower than YOLO)
@@ -33,19 +38,26 @@ MAX_GPS_AGE = 30
 DETECT_CONF = 0.35
 
 
-def get_gps():
+def _fresh(fix):
     try:
-        response = requests.get(GPS_URL, timeout=1)
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(fix["timestamp"])).total_seconds()
+    except (KeyError, ValueError, TypeError):
+        return False
+    return 0 <= age <= MAX_GPS_AGE
+
+
+def get_gps():
+    """{"by_owner": {"<user id>": fix}} with only fresh fixes, or None.
+    The recorder attaches each belonging's owner's fix to its sightings."""
+    try:
+        response = requests.get(GPS_URL, timeout=1, headers=device_headers())
         response.raise_for_status()
         data = response.json()
-        if "latitude" not in data:
-            return None
-        age = (datetime.now(timezone.utc)
-               - datetime.fromisoformat(data["timestamp"])).total_seconds()
-        if age < 0 or age > MAX_GPS_AGE:
-            return None
-        return data
-    except (requests.RequestException, KeyError, ValueError, TypeError):
+        by_owner = {k: v for k, v in (data.get("by_owner") or {}).items()
+                    if isinstance(v, dict) and "latitude" in v and _fresh(v)}
+        return {"by_owner": by_owner} if by_owner else None
+    except (requests.RequestException, AttributeError, ValueError, TypeError):
         return None
 
 
@@ -250,8 +262,10 @@ def main():
                             "Couldn't grab that view. Hold it still and try again.")
                     else:
                         try:
+                            # The dashboard user who pressed Add owns it.
                             info, count = save_angle_default(
-                                outcome.category, crop, enroll_id)
+                                outcome.category, crop, enroll_id,
+                                remote.get("owner_id"))
                         except Exception as e:
                             print(f"[enroll] save failed: {e}")
                             guide.fail_shot(

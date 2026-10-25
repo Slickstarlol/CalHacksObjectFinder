@@ -94,6 +94,7 @@ section.label { font-size:13px; color:var(--muted); text-transform:uppercase; le
 <div id="mine"></div>
 <div id="result"></div>
 
+<script src="/auth.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 
@@ -158,7 +159,7 @@ setInterval(refreshTimes, 15000);   // seconds-level labels only exist for the f
 
 async function loadMine() {
   try {
-    const items = await (await fetch("/api/belongings")).json();
+    const items = await (await RecallAuth.fetch("/api/belongings")).json();
     const box = $("mine");
     box.innerHTML = "";
     if (!items.length) {
@@ -171,7 +172,7 @@ async function loadMine() {
     for (const b of items) {
       const ls = b.last_seen || {};
       const thumb = ls.crop_url || ls.image_url
-        ? el("img", { src: ls.crop_url || ls.image_url, alt: b.name })
+        ? el("img", { src: RecallAuth.media(ls.crop_url || ls.image_url), alt: b.name })
         : el("div", { class: "ph" }, !b.photos ? "needs photos"
             : ls.last_seen_at ? "image missing" : "not seen yet");
       const lines = [];
@@ -214,9 +215,9 @@ function card(s) {
 
   const img = s.crop_path || s.image_path;
   const full = el("details", {}, el("summary", {}, "Full photo"),
-    el("img", { src: "/" + s.image_path, alt: s.label, loading: "lazy" }));
+    el("img", { src: RecallAuth.media("/" + s.image_path), alt: s.label, loading: "lazy" }));
   return el("div", { class: "card" },
-    el("div", { class: "row" }, el("img", { class: "crop", src: "/" + img, alt: s.label }), info),
+    el("div", { class: "row" }, el("img", { class: "crop", src: RecallAuth.media("/" + img), alt: s.label }), info),
     full);
 }
 
@@ -227,7 +228,7 @@ async function show(q, belongingId) {
     ? "/api/sightings?limit=10&belonging_id=" + encodeURIComponent(belongingId)
     : "/api/sightings?limit=10&q=" + encodeURIComponent(q);
   try {
-    const rows = await (await fetch(url)).json();
+    const rows = await (await RecallAuth.fetch(url)).json();
     if (!Array.isArray(rows) || !rows.length) {
       $("status").textContent = 'No sightings for "' + q + '" yet';
       return;
@@ -249,7 +250,6 @@ function runSearch() {
 }
 $("go").onclick = runSearch;
 $("query").addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
-loadMine();
 
 // ---------------- Ask RecallAI (Grok agent) ----------------
 const history = [];
@@ -261,7 +261,7 @@ async function ask(question) {
   const turn = el("div", {}, el("div", { class: "q" }, question), a);
   $("chat").prepend(turn);
   try {
-    const r = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+    const r = await RecallAuth.fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, history, timezone: userTZ }) });
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || "request failed");
@@ -275,7 +275,7 @@ async function ask(question) {
       const refs = el("div", { class: "refs" });
       for (const s of data.sightings) {
         refs.append(el("figure", {},
-          el("img", { src: "/" + (s.crop_path || s.image_path), alt: "" }),
+          el("img", { src: RecallAuth.media("/" + (s.crop_path || s.image_path)), alt: "" }),
           "#" + s.id + " · ", liveTime(s.timestamp)));
       }
       turn.append(refs);
@@ -294,7 +294,7 @@ async function ask(question) {
 function lookupCard(lk) {
   const box = el("div", { class: "lookup" });
   const img = lk.crop_url || lk.image_url;
-  if (img) box.append(el("img", { src: img, alt: "" }));
+  if (img) box.append(el("img", { src: RecallAuth.media(img), alt: "" }));
   const info = el("div", {}, el("b", {}, lk.belonging_name || "Item"), el("br"),
     "Requested: " + (absolute(lk.requested_at) || lk.requested_at), el("br"));
   if (lk.seen_at || lk.last_seen_at) {
@@ -331,21 +331,24 @@ document.querySelectorAll(".examples button").forEach(b => b.onclick = () => ask
 // ---------------- Proactive alerts ----------------
 async function loadAlerts() {
   try {
-    const alerts = await (await fetch("/api/alerts")).json();
+    const alerts = await (await RecallAuth.fetch("/api/alerts")).json();
     const box = $("alerts");
     box.innerHTML = "";
     for (const al of alerts) {
       box.append(el("div", { class: "alert " + al.urgency },
-        al.crop_path ? el("img", { src: "/" + al.crop_path, alt: "" }) : null,
+        al.crop_path ? el("img", { src: RecallAuth.media("/" + al.crop_path), alt: "" }) : null,
         el("p", {}, el("b", {}, al.urgency === "high" ? "Left behind? " : "Heads up: "), al.message),
         el("button", { title: "Dismiss", onclick: async () => {
-          await fetch("/api/alerts/" + al.id + "/dismiss", { method: "POST" }); loadAlerts(); } }, "×")));
+          await RecallAuth.fetch("/api/alerts/" + al.id + "/dismiss", { method: "POST" }); loadAlerts(); } }, "×")));
     }
   } catch (e) { /* server offline */ }
 }
-loadAlerts();
-setInterval(loadAlerts, 20000);
-setInterval(() => { if (!document.hidden) loadMine(); }, 60000);
+RecallAuth.require(() => {
+  loadMine();
+  loadAlerts();
+  setInterval(loadAlerts, 20000);
+  setInterval(() => { if (!document.hidden) loadMine(); }, 60000);
+});
 </script>
 </body>
 </html>

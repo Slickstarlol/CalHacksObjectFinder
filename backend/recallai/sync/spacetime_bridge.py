@@ -5,7 +5,11 @@ SQLite (memory.db) stays the primary store. This bridge:
     (only ones of *your* belongings), alerts and people to SpacetimeDB by calling the module's bridge-only reducers over HTTP;
   * re-pushes a row whenever it changes (e.g. Grok later fills in the
     description / place / verified columns);
-  * copies alert dismissals made in the dashboard back into SQLite.
+  * copies alert dismissals made in the dashboard back into SQLite;
+  * tags every row with its owner (the RecallAI account's user id as a
+    string, "" = ownerless) so the live dashboard only shows the signed-in
+    user's rows. SpacetimeDB tables are public: this is filtering for a
+    local app, not access control (see docs/AUTH.md).
 
 The reducer names and positional argument order follow SPACETIME_CONTRACT.md.
 
@@ -29,7 +33,7 @@ from pathlib import Path
 
 import requests
 
-from recallai import paths
+from recallai import owners, paths
 from recallai.memory import db as dbmod
 from recallai.ai import llm
 from recallai.vision.recognition import BELONGINGS_DIR, load_belongings
@@ -120,19 +124,28 @@ def _num(v):
     return f if math.isfinite(f) else 0.0
 
 
+def owner_key(value):
+    """users.id -> "3"; NULL/unknown -> "" (ownerless)."""
+    try:
+        return owners.as_key(value)
+    except (TypeError, ValueError):
+        return ""
+
+
 def belonging_args(item):
-    """[id, name, category, photos, tracking]
+    """[id, name, category, photos, tracking, owner]
 
     tracking is False while the camera is still collecting the enrollment
     angles (info.json "tracking": false); older belongings default to True."""
     return [str(item.id), _text(item.name), _text(item.category),
-            int(len(item.reference_paths)), bool(getattr(item, "tracking", True))]
+            int(len(item.reference_paths)), bool(getattr(item, "tracking", True)),
+            owner_key(getattr(item, "owner_id", None))]
 
 
 def sighting_args(row):
     """[id, belongingId, belongingName, objectName, event, seenAtMicros,
     imageUrl, cropUrl, description, place, nearby, matchScore, verified,
-    hasGps, latitude, longitude]"""
+    hasGps, latitude, longitude, owner]"""
     r = dict(row)
     verified = r.get("verified")
     has_gps = r.get("latitude") is not None
@@ -153,12 +166,13 @@ def sighting_args(row):
         has_gps,
         _num(r.get("latitude")),
         _num(r.get("longitude")),
+        owner_key(r.get("owner_id")),
     ]
 
 
 def alert_args(row):
     """[id, belongingId, belongingName, sightingId, reason, urgency, message,
-    createdAtMicros, dismissed]"""
+    createdAtMicros, dismissed, owner]"""
     r = dict(row)
     return [
         int(r["id"]),
@@ -170,12 +184,13 @@ def alert_args(row):
         _text(r.get("message")),
         iso_to_micros(r.get("created_at")),
         bool(r.get("dismissed")),
+        owner_key(r.get("owner_id")),
     ]
 
 
 def person_args(row):
     """[id, name, description, relationship, knownSince, createdAtMicros,
-    updatedAtMicros]"""
+    updatedAtMicros, owner]"""
     r = dict(row)
     return [
         int(r["id"]),
@@ -185,6 +200,7 @@ def person_args(row):
         _text(r.get("known_since")),
         iso_to_micros(r.get("created_at")),
         iso_to_micros(r.get("updated_at")),
+        owner_key(r.get("owner_id")),
     ]
 
 

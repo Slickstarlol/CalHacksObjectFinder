@@ -9,6 +9,16 @@ table/column/reducer names or argument order without telling the lead).
 - v2 (merge with people/enrollment): `belonging.tracking` (last column, default true),
   new table `person`, reducers `upsert_person` / `delete_person`. Existing arg orders unchanged
   except `upsert_belonging`, which gains a trailing `tracking` arg.
+- v3 (accounts, see [AUTH.md](AUTH.md)): every mirrored table gains a last column
+  `owner: string` (`default('')`, so a published database upgrades in place) = the
+  RecallAI account's `users.id` as text, `""` = ownerless (recorded before accounts;
+  re-pushed with the owner once the first account claims it). Every `upsert_*` reducer
+  gains a trailing `owner` arg. The live dashboard subscribes with `WHERE owner = '<id>'`.
+  The tables stay **public**: `owner` is filtering for a local app, not access control.
+  The bindings in `frontend/live-dashboard/src/module_bindings/` were updated **by hand**
+  for v3 (the `spacetime` CLI wasn't available); they match what `spacetime generate`
+  emits for these columns (`owner: __t.string()`, no `.name()` needed). Regenerate with
+  the CLI when you next have it to confirm.
 
 ## Architecture
 
@@ -41,7 +51,8 @@ TypeScript keys are camelCase; SpacetimeDB column names (used in SQL) are snake_
 | name | name | string | info.json name |
 | category | category | string | info.json category |
 | photos | photos | u32 | number of `reference_*` images |
-| tracking | tracking | bool | info.json `tracking` (missing → true). **false while enrolling**: `enroll.py` creates the folder with `"tracking": false` and flips it to true once all 5 angles are saved; the matcher ignores it until then. Last column, `default(true)`, so an already-published database upgrades in place (no `--delete-data`). |
+| tracking | tracking | bool | info.json `tracking` (missing → true). **false while enrolling**: `enroll.py` creates the folder with `"tracking": false` and flips it to true once all 5 angles are saved; the matcher ignores it until then. `default(true)`, so an already-published database upgrades in place (no `--delete-data`). |
+| owner | owner | string | info.json `owner_id` as text ("" if missing). Last column, `default('')`. |
 
 The dashboard shows an **"Enrolling…"** badge (not "Not seen yet") for `tracking = false`.
 
@@ -64,6 +75,7 @@ The dashboard shows an **"Enrolling…"** badge (not "Not seen yet") for `tracki
 | hasGps | has_gps | bool | latitude IS NOT NULL |
 | latitude | latitude | f64 | latitude or 0 |
 | longitude | longitude | f64 | longitude or 0 |
+| owner | owner | string | owner_id as text, "" if NULL |
 
 Sightings with `verified = 0` (Grok: not yours) ARE synced with verified=0; the dashboard hides them.
 
@@ -79,6 +91,7 @@ Sightings with `verified = 0` (Grok: not yours) ARE synced with verified=0; the 
 | message | message | string | message |
 | createdAtMicros | created_at_micros | i64 | created_at (ISO) → microseconds |
 | dismissed | dismissed | bool | dismissed != 0 |
+| owner | owner | string | owner_id as text, "" if NULL |
 
 Only alerts with `dismissed = 0` in SQLite need to be pushed initially, but pushing all is fine (idempotent).
 
@@ -92,6 +105,7 @@ Only alerts with `dismissed = 0` in SQLite need to be pushed initially, but push
 | knownSince | known_since | string | known_since `YYYY-MM-DD`, or "" if NULL |
 | createdAtMicros | created_at_micros | i64 | created_at (ISO) → microseconds |
 | updatedAtMicros | updated_at_micros | i64 | updated_at (ISO) → microseconds |
+| owner | owner | string | owner_id as text, "" if NULL |
 
 "How long you've known them" is derived from `knownSince` at read time (same rule as `people.known_for`).
 All rows are synced; people deleted in SQLite are deleted here (same pruning as sightings/alerts).
@@ -103,15 +117,15 @@ HTTP calls send a **JSON array of arguments in exactly this order**. Python ints
 | reducer | args (in order) | who may call |
 |---|---|---|
 | register_bridge | (none → body `[]`) | first caller becomes the bridge; same identity may repeat |
-| upsert_belonging | id, name, category, photos, tracking | bridge |
+| upsert_belonging | id, name, category, photos, tracking, owner | bridge |
 | delete_belonging | id | bridge |
-| upsert_sighting | id, belongingId, belongingName, objectName, event, seenAtMicros, imageUrl, cropUrl, description, place, nearby, matchScore, verified, hasGps, latitude, longitude | bridge |
+| upsert_sighting | id, belongingId, belongingName, objectName, event, seenAtMicros, imageUrl, cropUrl, description, place, nearby, matchScore, verified, hasGps, latitude, longitude, owner | bridge |
 | delete_sighting | id | bridge |
-| upsert_alert | id, belongingId, belongingName, sightingId, reason, urgency, message, createdAtMicros, dismissed | bridge (a dashboard dismissal is never undone by a stale upsert) |
+| upsert_alert | id, belongingId, belongingName, sightingId, reason, urgency, message, createdAtMicros, dismissed, owner | bridge (a dashboard dismissal is never undone by a stale upsert) |
 | delete_alert | id | bridge (alert removed from SQLite) |
-| upsert_person | id, name, description, relationship, knownSince, createdAtMicros, updatedAtMicros | bridge |
+| upsert_person | id, name, description, relationship, knownSince, createdAtMicros, updatedAtMicros, owner | bridge |
 | delete_person | id | bridge (person removed from SQLite) |
-| dismiss_alert | id | anyone (dashboard) |
+| dismiss_alert | id | anyone (dashboard; SpacetimeDB can't check RecallAI accounts, so the dashboard only offers it for the signed-in user's alerts) |
 
 React accessor names (generated bindings, already in `frontend/live-dashboard/src/module_bindings/`):
 `tables.belonging`, `tables.sighting`, `tables.alert`, `tables.person`; `reducers.dismissAlert`, etc.;
@@ -122,7 +136,10 @@ Regenerate them with the real CLI after any module change (never hand-edit):
 or `npm run spacetime:generate` in `frontend/live-dashboard/`.
 
 ## Existing FastAPI endpoints the dashboard may use (server.py, port 8000)
-- `GET /snapshots/<file>` — images (paths as stored in imageUrl/cropUrl)
+All of these need the signed-in user (`Authorization: Bearer <token>`, see [AUTH.md](AUTH.md))
+and only return that user's data.
+- `GET /snapshots/<file>` — images (paths as stored in imageUrl/cropUrl); only the owner of the
+  sighting gets the file; `<img>` URLs carry `?token=<token>`
 - `POST /api/ask` body `{"question": str, "history": [{"role","content"}], "timezone": IANA str}` →
   `{"answer": str, "sightings": [row dicts incl. id, crop_path, image_path, timestamp], "steps": [{tool,input}], "lookups"?: [...]}`
   (answer cites sightings as `[#id]`; 502 with `{"detail"}` if Grok fails)

@@ -11,9 +11,10 @@ type Props = {
   belongings: number;
   sightings: number;
   alerts: number;
+  account?: { name: string; username: string; onSignOut: () => void };
 };
 
-export function Header({ status, belongings, sightings, alerts }: Props) {
+export function Header({ status, belongings, sightings, alerts, account }: Props) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -42,6 +43,17 @@ export function Header({ status, belongings, sightings, alerts }: Props) {
           <span className="status-dot" aria-hidden="true" />
           <span className="status-text">{LABEL[status]}</span>
         </div>
+        {account && (
+          <div className="account">
+            <span className="account-name" title={`Signed in as ${account.username}`}>
+              <span className="visually-hidden">Signed in as </span>
+              {account.name}
+            </span>
+            <button type="button" className="btn btn-quiet" onClick={account.onSignOut}>
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

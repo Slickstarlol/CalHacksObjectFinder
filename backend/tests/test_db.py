@@ -144,14 +144,18 @@ def test_previous_release_db_gains_people_without_data_loss(tmp_path):
     dbmod.init_db(p)
     dbmod.init_db(p)  # idempotent
 
-    assert _dump(p) == before                      # every value survives
+    after = _dump(p)
+    # every value survives; the only change is the new owner_id column, NULL
+    # until the first account claims the rows
+    assert {t: [{k: r[k] for k in before[t][0]} for r in after[t]] for t in after} == before
+    assert all(r["owner_id"] is None for t in after for r in after[t])
     with dbmod.connect(p) as db:
         tables = {r[0] for r in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"sightings", "alerts", "people"} <= tables
         people_cols = {r[1] for r in db.execute("PRAGMA table_info(people)")}
         assert people_cols == {"id", "name", "description", "relationship",
-                               "known_since", "created_at", "updated_at"}
+                               "known_since", "created_at", "updated_at", "owner_id"}
         assert db.execute("SELECT COUNT(*) FROM people").fetchone()[0] == 0
         # New rows still work in every table, ids continue after the old ones.
         new_id = dbmod.insert_sighting(db, object_name="cup", timestamp="t",

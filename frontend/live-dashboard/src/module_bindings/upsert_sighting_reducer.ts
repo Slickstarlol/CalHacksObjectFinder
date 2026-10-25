@@ -27,4 +27,5 @@ export default {
   hasGps: __t.bool(),
   latitude: __t.f64(),
   longitude: __t.f64(),
+  owner: __t.string(),
 };

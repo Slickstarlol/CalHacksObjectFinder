@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from recallai.memory import db as dbmod
-from conftest import RED, make_object_image, register
+from conftest import RED, make_object_image, register, sign_in
 
 
 @pytest.fixture
@@ -34,7 +34,9 @@ def client(tmp_path, belongings_dir, monkeypatch):
                               image_path="snapshots/b.jpg", belonging_id="bag1",
                               belonging_name="My Bag", event="left_view",
                               crop_path="snapshots/crops/b.jpg", nearby="chair")
-    return TestClient(server.app)
+    c = TestClient(server.app)
+    sign_in(c)   # first account: claims the ownerless rows/belongings above
+    return c
 
 
 def test_belongings_list(client):

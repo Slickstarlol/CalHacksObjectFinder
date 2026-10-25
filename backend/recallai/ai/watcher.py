@@ -10,6 +10,11 @@ Every minute (inside server.py):
      which deserve an alert (and writes a short, specific message). Without
      an API key, a plain template message is used instead.
 Each sighting can trigger at most one alert.
+
+Per user: each alert carries the owner_id of its belonging, "moved_away"
+compares against THAT owner's phone GPS (gps may be a callable
+owner_id -> gps), and Grok reviews each owner's candidates in a separate
+request so one user's items never appear in another user's prompt.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+from recallai import owners
 from recallai.memory import db as dbmod
 from recallai.memory import temporal_memory as tm
 from recallai.ai.agent import ago, distance_m, local
@@ -69,15 +75,26 @@ Candidates:
 For each candidate decide whether to alert. Use high urgency for moved_away or valuables. Messages should tell the user exactly where the item was last seen and when, so they can go get it. Call decide_alerts."""
 
 
+def gps_for(gps, owner_id):
+    """gps is None, one fix for everyone (legacy single user), or a callable
+    owner_id -> that user's latest fix."""
+    if callable(gps):
+        return gps(owner_id) if owner_id is not None else None
+    return gps
+
+
 def find_candidates(db_path=None, gps=None, now=None, belongings_dir=BELONGINGS_DIR,
-                    forgot_after_min=FORGOT_AFTER_MIN, moved_away_m=MOVED_AWAY_M):
+                    forgot_after_min=FORGOT_AFTER_MIN, moved_away_m=MOVED_AWAY_M,
+                    owner_id=owners.ANY):
     now = now or datetime.now(timezone.utc)
     out = []
     with dbmod.connect(db_path) as db:
-        for b in load_belongings(belongings_dir):
+        for b in owners.owned(load_belongings(belongings_dir), owner_id):
+            # Sightings of this belonging that carry its owner (IS: NULL-safe).
             last = db.execute(
-                f"SELECT * FROM sightings WHERE belonging_id=? AND {VISIBLE} "
-                "ORDER BY timestamp DESC, id DESC LIMIT 1", (b.id,)).fetchone()
+                f"SELECT * FROM sightings WHERE belonging_id=? AND owner_id IS ? "
+                f"AND {VISIBLE} ORDER BY timestamp DESC, id DESC LIMIT 1",
+                (b.id, b.owner_id)).fetchone()
             if last is None:
                 continue
             if db.execute("SELECT 1 FROM alerts WHERE belonging_id=? AND sighting_id=?",
@@ -85,10 +102,11 @@ def find_candidates(db_path=None, gps=None, now=None, belongings_dir=BELONGINGS_
                 continue  # already alerted about this exact sighting
 
             reason, detail = None, ""
-            if gps and last["latitude"] is not None:
+            fix = gps_for(gps, b.owner_id)
+            if fix and last["latitude"] is not None:
                 d = distance_m(last["latitude"], last["longitude"],
-                               gps["latitude"], gps["longitude"])
-                slack = (last["accuracy"] or 0) + (gps.get("accuracy") or 0)
+                               fix["latitude"], fix["longitude"])
+                slack = (last["accuracy"] or 0) + (fix.get("accuracy") or 0)
                 if d > max(moved_away_m, slack):
                     reason, detail = "moved_away", f"phone is now {d:.0f} m away"
             if reason is None and last["event"] == "left_view":
@@ -100,10 +118,12 @@ def find_candidates(db_path=None, gps=None, now=None, belongings_dir=BELONGINGS_
                 continue
 
             history = db.execute(
-                f"SELECT * FROM sightings WHERE belonging_id=? AND {VISIBLE} "
-                "ORDER BY timestamp DESC, id DESC LIMIT 6", (b.id,)).fetchall()
+                f"SELECT * FROM sightings WHERE belonging_id=? AND owner_id IS ? "
+                f"AND {VISIBLE} ORDER BY timestamp DESC, id DESC LIMIT 6",
+                (b.id, b.owner_id)).fetchall()
             out.append({"belonging": b, "last": last, "reason": reason,
-                        "detail": detail, "history": history})
+                        "detail": detail, "history": history,
+                        "owner_id": b.owner_id})
     return out
 
 
@@ -154,11 +174,17 @@ def run_once(client=None, db_path=None, gps=None, now=None,
     cands = find_candidates(db_path, gps, now, belongings_dir, **rule_kwargs)
     if not cands:
         return []
-    try:
-        decisions = decide(client, cands, now)
-    except Exception as e:
-        print(f"[WATCHER] Grok unavailable ({e}); using template alerts")
-        decisions = decide(None, cands, now)
+    # One Grok review per owner: a prompt never mixes two users' belongings.
+    by_owner = {}
+    for c in cands:
+        by_owner.setdefault(c["owner_id"], []).append(c)
+    decisions = {}
+    for group in by_owner.values():
+        try:
+            decisions.update(decide(client, group, now))
+        except Exception as e:
+            print(f"[WATCHER] Grok unavailable ({e}); using template alerts")
+            decisions.update(decide(None, group, now))
 
     new = []
     with dbmod.connect(db_path) as db:
@@ -170,13 +196,13 @@ def run_once(client=None, db_path=None, gps=None, now=None,
                      "send": False}
             db.execute(
                 "INSERT OR IGNORE INTO alerts (belonging_id, belonging_name, "
-                "sighting_id, reason, urgency, message, created_at, dismissed) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "sighting_id, reason, urgency, message, created_at, dismissed, owner_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (c["belonging"].id, c["belonging"].name, c["last"]["id"],
                  c["reason"], d.get("urgency", "low"), d["message"],
-                 now.isoformat(), 0 if d.get("send") else 1))
+                 now.isoformat(), 0 if d.get("send") else 1, c["owner_id"]))
             if d.get("send"):
-                new.append({"belonging": c["belonging"].name, **d})
+                new.append({"belonging": c["belonging"].name, "owner_id": c["owner_id"], **d})
                 print(f"[ALERT] {d['message']}")
         db.commit()
     return new
@@ -186,6 +212,7 @@ class Watcher:
     """Background thread for server.py."""
 
     def __init__(self, gps_provider, interval=60, client=None):
+        """gps_provider: callable(owner_id) -> that user's fresh phone GPS."""
         self.gps_provider = gps_provider
         self.interval = interval
         self.client = client if client is not None else get_client()
@@ -196,7 +223,7 @@ class Watcher:
     def _loop(self):
         while True:
             try:
-                run_once(self.client, gps=self.gps_provider())
+                run_once(self.client, gps=self.gps_provider)
             except Exception as e:
                 print(f"[WATCHER] error: {e}")
             time.sleep(self.interval)

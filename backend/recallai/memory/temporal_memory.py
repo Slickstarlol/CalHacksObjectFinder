@@ -23,6 +23,9 @@ Semantics:
   * Rejected sightings (verified = 0) are hidden, as everywhere else;
     unreviewed ones (verified NULL) count but are reported as unverified.
   * Read-only: looking an item up never creates a sighting or resets its age.
+  * Per user: every public function takes owner_id (default owners.ANY = no
+    filter, for trusted single-user callers); the web server and the agent
+    always pass the signed-in user's id, so only their rows are considered.
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
-from recallai import paths
+from recallai import owners, paths
 from recallai.memory import db as dbmod
 from recallai.vision.recognition import BELONGINGS_DIR, load_belongings
 
@@ -226,13 +229,14 @@ def _rows(db, where, params, now, newest_first=True):
             yield at, r
 
 
-def _unusable(db, belonging_id, now):
+def _unusable(db, belonging_id, now, owner_id=owners.ANY):
     """Rows hidden from temporal answers because their timestamp is in the
     future or not a timestamp (text sorts after the cutoff)."""
+    own, own_params = owners.clause(owner_id)
     return db.execute(
         f"SELECT COUNT(*) FROM sightings WHERE {VISIBLE} AND belonging_id = ? "
-        "AND NOT (timestamp <= ?)",
-        (belonging_id, to_iso(_now(now) + FUTURE_TOLERANCE))).fetchone()[0]
+        f"AND {own} AND NOT (timestamp <= ?)",
+        (belonging_id, *own_params, to_iso(_now(now) + FUTURE_TOLERANCE))).fetchone()[0]
 
 
 def _your(name):
@@ -245,7 +249,8 @@ def _your(name):
 # Public API
 # ---------------------------------------------------------------------------
 def get_last_seen(belonging_id, db_path=None, now=None, belongings_dir=BELONGINGS_DIR,
-                  history=0, at=None, tz=None, base_dir=None, name=None):
+                  history=0, at=None, tz=None, base_dir=None, name=None,
+                  owner_id=owners.ANY):
     """Latest observation of one belonging (by stable id).
 
     at:      only consider observations at or before this time ("where was it
@@ -263,11 +268,12 @@ def get_last_seen(belonging_id, db_path=None, now=None, belongings_dir=BELONGING
     if at is not None and target is None:
         raise ValueError(f"Not an ISO 8601 time: {at!r}")
     if name is None:
-        name = next((b.name for b in load_belongings(belongings_dir)
+        name = next((b.name for b in owners.owned(load_belongings(belongings_dir), owner_id)
                      if b.id == belonging_id), None)
+    own, own_params = owners.clause(owner_id)
 
     with dbmod.connect(db_path) as db:
-        where, params = "belonging_id = ?", [belonging_id]
+        where, params = f"belonging_id = ? AND {own}", [belonging_id, *own_params]
         if target is not None:
             where += " AND timestamp <= ?"
             params.append(to_iso(target))
@@ -279,18 +285,18 @@ def get_last_seen(belonging_id, db_path=None, now=None, belongings_dir=BELONGING
             if len(found) > history:
                 break
         total = db.execute(
-            f"SELECT COUNT(*) FROM sightings WHERE {VISIBLE} AND belonging_id = ?",
-            (belonging_id,)).fetchone()[0]
-        unusable = _unusable(db, belonging_id, now)
+            f"SELECT COUNT(*) FROM sightings WHERE {VISIBLE} AND belonging_id = ? AND {own}",
+            (belonging_id, *own_params)).fetchone()[0]
+        unusable = _unusable(db, belonging_id, now, owner_id)
         cutoff = now + FUTURE_TOLERANCE if target is None else min(target, now)
         last_verified = db.execute(
-            "SELECT MAX(timestamp) FROM sightings WHERE belonging_id = ? "
+            f"SELECT MAX(timestamp) FROM sightings WHERE belonging_id = ? AND {own} "
             "AND verified = 1 AND timestamp <= ?",
-            (belonging_id, to_iso(cutoff))).fetchone()[0]
+            (belonging_id, *own_params, to_iso(cutoff))).fetchone()[0]
         later = None
         if target is not None:
-            later = next(_rows(db, "belonging_id = ? AND timestamp > ?",
-                               (belonging_id, to_iso(target)), now,
+            later = next(_rows(db, f"belonging_id = ? AND {own} AND timestamp > ?",
+                               (belonging_id, *own_params, to_iso(target)), now,
                                newest_first=False), None)
 
     out = {
@@ -342,16 +348,17 @@ def get_last_seen(belonging_id, db_path=None, now=None, belongings_dir=BELONGING
 
 
 def get_sighting_nearest_time(belonging_id, at, window_seconds=900, db_path=None,
-                              now=None, tz=None, base_dir=None):
+                              now=None, tz=None, base_dir=None, owner_id=owners.ANY):
     """Observation closest to `at` within +-window ("around 10:30"), with
     the signed gap (negative = before the requested time). None if none."""
     target = parse_timestamp(at)
     if target is None:
         return None
     lo, hi = target - timedelta(seconds=window_seconds), target + timedelta(seconds=window_seconds)
+    own, own_params = owners.clause(owner_id)
     with dbmod.connect(db_path) as db:
-        pairs = list(_rows(db, "belonging_id = ? AND timestamp >= ? AND timestamp <= ?",
-                           (belonging_id, to_iso(lo), to_iso(hi)), now))
+        pairs = list(_rows(db, f"belonging_id = ? AND {own} AND timestamp >= ? AND timestamp <= ?",
+                           (belonging_id, *own_params, to_iso(lo), to_iso(hi)), now))
     if not pairs:
         return None
     # Newest first, and min() keeps the first of equal gaps: ties -> later one.
@@ -363,7 +370,8 @@ def get_sighting_nearest_time(belonging_id, at, window_seconds=900, db_path=None
 
 
 def get_sightings_between(start=None, end=None, belonging_id=None, db_path=None,
-                          now=None, event=None, limit=50, tz=None, base_dir=None):
+                          now=None, event=None, limit=50, tz=None, base_dir=None,
+                          owner_id=owners.ANY):
     """Observations with start <= time <= end (both inclusive), newest first.
     end defaults to now. belonging_id: one id, a list of ids, or None for
     every registered belonging."""
@@ -372,7 +380,8 @@ def get_sightings_between(start=None, end=None, belonging_id=None, db_path=None,
     end = parse_timestamp(end) if end is not None else now
     if end is None or (start is not None and start > end):
         return []
-    where, params = ["belonging_id IS NOT NULL"], []
+    own, own_params = owners.clause(owner_id)
+    where, params = ["belonging_id IS NOT NULL", own], list(own_params)
     if belonging_id:
         ids = [belonging_id] if isinstance(belonging_id, str) else list(belonging_id)
         where.append(f"belonging_id IN ({','.join('?' * len(ids))})")
@@ -395,7 +404,8 @@ def get_sightings_between(start=None, end=None, belonging_id=None, db_path=None,
 
 
 def get_items_not_seen_since(threshold, db_path=None, now=None,
-                             belongings_dir=BELONGINGS_DIR, tz=None, base_dir=None):
+                             belongings_dir=BELONGINGS_DIR, tz=None, base_dir=None,
+                             owner_id=owners.ANY):
     """Inventory against a threshold (seconds or timedelta).
 
     Returns {"not_seen_since": [...] longest-unseen first (age > threshold),
@@ -406,15 +416,17 @@ def get_items_not_seen_since(threshold, db_path=None, now=None,
     """
     now = _now(now)
     secs = threshold.total_seconds() if isinstance(threshold, timedelta) else float(threshold)
-    belongings = [b for b in load_belongings(belongings_dir) if b.tracking]
+    belongings = [b for b in owners.owned(load_belongings(belongings_dir), owner_id)
+                  if b.tracking]
+    own, own_params = owners.clause(owner_id)
     with dbmod.connect(db_path) as db:
         latest = {r["belonging_id"]: r for r in db.execute(
             f"""SELECT * FROM (
                   SELECT *, ROW_NUMBER() OVER (PARTITION BY belonging_id
                                                ORDER BY timestamp DESC, id DESC) AS rn
                   FROM sightings
-                  WHERE {VISIBLE} AND belonging_id IS NOT NULL AND timestamp <= ?)
-                WHERE rn = 1""", (to_iso(now + FUTURE_TOLERANCE),))}
+                  WHERE {VISIBLE} AND belonging_id IS NOT NULL AND {own} AND timestamp <= ?)
+                WHERE rn = 1""", (*own_params, to_iso(now + FUTURE_TOLERANCE)))}
     out = {"threshold_seconds": secs, "threshold": format_duration(secs),
            "not_seen_since": [], "seen_within": [], "never_seen": [], "unavailable": []}
     for b in belongings:
@@ -422,7 +434,7 @@ def get_items_not_seen_since(threshold, db_path=None, now=None,
         if row is None or parse_timestamp(row["timestamp"]) is None:
             # Rare: let the careful per-item lookup classify it.
             info = get_last_seen(b.id, db_path, now, belongings_dir, tz=tz,
-                                 base_dir=base_dir, name=b.name)
+                                 base_dir=base_dir, name=b.name, owner_id=owner_id)
         else:
             obs = observation(row, now, tz, base_dir)
             info = {**obs, "belonging_name": b.name, "last_seen_at": obs["seen_at"],

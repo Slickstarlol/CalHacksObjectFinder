@@ -44,7 +44,7 @@ export default function LiveBoard({
     let timer
     const tick = () => {
       const img = new Image()
-      const url = `/api/live/frame.jpg?t=${Date.now()}`
+      const url = mediaUrl(`/api/live/frame.jpg?t=${Date.now()}`)
       img.onload = () => {
         if (stop) return
         setFrameUrl(url)
@@ -114,6 +114,8 @@ export default function LiveBoard({
     }
   }, [selectedId])
 
+  // Another account is adding an item: the camera is busy, and it isn't ours to cancel.
+  const busyElsewhere = enroll?.active && enroll?.mine === false
   const inView = live?.in_view || []
   const others = groupDetections(live?.detections || [])
   const selected = (belongings || []).find((item) => item.id === selectedId) || null
@@ -203,16 +205,18 @@ export default function LiveBoard({
                   setFlowOpen(true)
                 }}
               >
-                {enroll?.active || flowOpen ? 'Adding' : 'Add'}
+                {busyElsewhere ? 'Busy' : enroll?.active || flowOpen ? 'Adding' : 'Add'}
               </button>
               {!flowOpen && enroll?.active && (
                 <div className="enroll-banner" role="status">
                   <p>{enroll.message}</p>
-                  <p className="enroll-count">
-                    {enroll.saved || 0} of {enroll.needed || 5} angles
-                    {enroll.name ? ` · ${displayName(nicknames, enroll.belonging_id, enroll.name)}` : ''}
-                  </p>
-                  {enroll.active && (
+                  {!busyElsewhere && (
+                    <p className="enroll-count">
+                      {enroll.saved || 0} of {enroll.needed || 5} angles
+                      {enroll.name ? ` · ${displayName(nicknames, enroll.belonging_id, enroll.name)}` : ''}
+                    </p>
+                  )}
+                  {enroll.active && !busyElsewhere && (
                     <button type="button" className="btn ghost" onClick={cancelEnroll}>
                       Cancel
                     </button>

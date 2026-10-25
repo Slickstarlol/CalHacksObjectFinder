@@ -16,4 +16,5 @@ export default __t.row({
   category: __t.string(),
   photos: __t.u32(),
   tracking: __t.bool(),
+  owner: __t.string(),
 });

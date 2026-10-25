@@ -44,3 +44,71 @@ def belongings_dir(tmp_path):
 RED = (40, 40, 200)
 BLUE = (200, 60, 30)
 GREEN = (50, 170, 60)
+
+
+# ---------------------------------------------------------------------------
+# Accounts
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _isolate_accounts(tmp_path, monkeypatch):
+    """Keep account state per test, and point the server's belongings folder
+    at this test's tmp dir (tmp_path/"belongings", the same folder the
+    `belongings_dir` fixture creates) so registering the first account never
+    claims the repository's real data/belongings."""
+    from recallai import paths
+    from recallai.api import auth, search
+    monkeypatch.setattr(search, "BELONGINGS_DIR", tmp_path / "belongings")
+    auth.throttle.reset()
+    server = sys.modules.get("recallai.api.server")
+    if server is not None:
+        server.reset_gps()
+        server.reset_enroll()
+    real = {p: p.read_bytes() for p in Path(paths.BELONGINGS_DIR).glob("*/info.json")}
+    yield
+    auth.throttle.reset()
+    # Guard: no test may claim or edit the repository's real belongings.
+    changed = [str(p) for p, data in real.items() if p.read_bytes() != data]
+    assert not changed, f"test modified real belongings: {changed}"
+
+
+PASSWORD = "correct horse battery"
+
+
+def sign_up(client, username="kent", password=PASSWORD, display_name=None):
+    """Register an account through the API; returns the JSON (token, user)."""
+    r = client.post("/api/auth/register", json={
+        "username": username, "password": password,
+        "display_name": display_name or username.title()})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def auth_headers(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def sign_in(client, username="kent", password=PASSWORD):
+    """Register `username` and make every later request from `client` carry
+    its token. In a fresh test DB the first account claims all ownerless
+    rows and belongings, i.e. everything the test inserted before."""
+    data = sign_up(client, username, password)
+    client.headers.update(auth_headers(data["token"]))
+    return data
+
+
+def lazy_signed_in_client(app, username="kent"):
+    """A TestClient that registers `username` right before its first request,
+    so everything the test inserted until then is claimed by that account
+    (the first-account migration), whatever order fixtures ran in."""
+    from fastapi.testclient import TestClient
+
+    class _Client(TestClient):
+        _signed = False
+
+        def request(self, *args, **kwargs):
+            if not self._signed:
+                self._signed = True
+                self.user = sign_in(self, username)["user"]
+            return super().request(*args, **kwargs)
+
+    return _Client(app)

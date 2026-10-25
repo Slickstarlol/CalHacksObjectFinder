@@ -1,5 +1,6 @@
 {
   "id": "3617519a583a",
   "name": "My Bag",
-  "category": "backpack"
+  "category": "backpack",
+  "owner_id": 1
 }

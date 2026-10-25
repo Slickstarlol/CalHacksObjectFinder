@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from recallai.memory import db as dbmod
+from conftest import sign_in
 from recallai.vision.enroll import AngleCapture, save_angle
 from recallai.vision.recognition import BelongingMatcher, HistogramEmbedder
 
@@ -173,17 +174,21 @@ def client(tmp_path, monkeypatch):
     dbmod.init_db()
     from recallai.api import server
     server.reset_enroll()
-    return TestClient(server.app)
+    c = TestClient(server.app)
+    sign_in(c)
+    return c
 
 
 def test_enroll_api_keeps_progress_when_cancelled(client):
+    from recallai.api import server
+    camera = TestClient(server.app, client=("127.0.0.1", 50000))  # local device
     assert client.get("/api/enroll").json()["active"] is False
     started = client.post("/api/enroll/start").json()
     assert started["active"] is True
     assert started["saved"] == 0
     assert "hold it still" in started["message"]
 
-    reported = client.post("/api/live", json={"enroll": {
+    reported = camera.post("/api/live", json={"enroll": {
         "phase": "turn",
         "message": "Turn the mouse to a new angle. 2 of 5 saved.",
         "category": "mouse",
@@ -197,7 +202,7 @@ def test_enroll_api_keeps_progress_when_cancelled(client):
     cancelled = client.post("/api/enroll/cancel").json()
     assert cancelled["active"] is False
     # A frame still in flight cannot move the count or turn the session back on.
-    client.post("/api/live", json={"enroll": {
+    camera.post("/api/live", json={"enroll": {
         "phase": "hold", "message": "nope", "saved": 4, "category": "mouse",
     }})
     status = client.get("/api/enroll").json()
@@ -206,7 +211,7 @@ def test_enroll_api_keeps_progress_when_cancelled(client):
 
     done = client.post("/api/enroll/start").json()
     assert done["active"] is True and done["saved"] == 0
-    client.post("/api/live", json={"enroll": {
+    camera.post("/api/live", json={"enroll": {
         "phase": "done",
         "message": "mouse is in the tracker.",
         "category": "mouse",

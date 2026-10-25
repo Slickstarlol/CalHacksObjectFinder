@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from recallai.memory import db as dbmod
 from recallai.ai.agent import MemoryTools
 from recallai.memory.people import known_for
+from recallai.vision.recognition import set_owner
+from conftest import register, sign_in
 
 
 @pytest.fixture
@@ -27,7 +29,9 @@ def client(tmp_path, monkeypatch):
             "gps": False, "width": None, "height": None,
             "in_view": [], "detections": [],
         }
-    return TestClient(server.app)
+    c = TestClient(server.app)
+    c.user = sign_in(c)["user"]
+    return c
 
 
 def test_known_for_phrases():
@@ -110,13 +114,19 @@ def _jpeg_b64():
     return base64.b64encode(buf.tobytes()).decode()
 
 
-def test_live_frame_roundtrip(client):
+def test_live_frame_roundtrip(client, tmp_path):
     from recallai.api import server
+    # The signed-in user's own belonging, so it is listed in in_view.
+    folder = tmp_path / "belongings"
+    register(folder, "My Bag", "backpack", [], item_id="bag1")
+    set_owner(folder / "bag1", client.user["id"])
+    # The camera process: a local device (loopback, no browser Origin).
+    camera = TestClient(server.app, client=("127.0.0.1", 50000))
     assert client.get("/api/live").json()["online"] is False
     assert client.get("/api/live/frame.jpg").status_code == 404
-    assert client.post("/api/live", json={"frame_jpeg_b64": "!!!!"}).status_code == 400
+    assert camera.post("/api/live", json={"frame_jpeg_b64": "!!!!"}).status_code == 400
 
-    posted = client.post("/api/live", json={
+    posted = camera.post("/api/live", json={
         "frame_jpeg_b64": _jpeg_b64(),
         "gps": True,
         "width": 18,

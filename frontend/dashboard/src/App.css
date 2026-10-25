@@ -734,3 +734,112 @@ a {
     height: 160px;
   }
 }
+
+/* ---- sign in / create account ---- */
+.auth-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 28px 24px;
+}
+
+.auth-card h1 {
+  font-family: var(--serif);
+  font-weight: 520;
+  font-size: 32px;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 6px 0 10px;
+}
+
+.auth-card .lede {
+  font-size: 15px;
+}
+
+.auth-card .banner {
+  margin: 14px 0 0;
+}
+
+.auth-card .field input {
+  font-size: 16px; /* no zoom-on-focus on phones */
+  min-height: 44px;
+}
+
+.auth-card .field input[aria-invalid="true"] {
+  border-color: var(--rose);
+}
+
+.field-error {
+  color: var(--rose);
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.auth-card .form-error:empty {
+  display: none;
+}
+
+.auth-submit {
+  width: 100%;
+  min-height: 46px;
+  background: var(--teal);
+}
+
+.auth-switch {
+  margin-top: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  color: var(--teal-deep);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* signed-in user in the header */
+.account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.account .who {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account .btn {
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+@media (max-width: 860px) {
+  .account {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .account .who {
+    max-width: none;
+  }
+}
