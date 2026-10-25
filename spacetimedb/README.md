@@ -1,10 +1,10 @@
 # RecallAI SpacetimeDB module
 
 The live, shared copy of RecallAI's memory. Python still writes to SQLite first;
-`spacetime_bridge.py` mirrors belongings, sightings, alerts and people here through the
-bridge-only reducers, and the React dashboard (`../web`) subscribes over WebSocket
+`backend/recallai/sync/spacetime_bridge.py` mirrors belongings, sightings, alerts and people here through the
+bridge-only reducers, and the React dashboard (`../frontend/live-dashboard`) subscribes over WebSocket
 so new sightings and alerts appear instantly. The spec is
-[`../SPACETIME_CONTRACT.md`](../SPACETIME_CONTRACT.md).
+[`../docs/SPACETIME_CONTRACT.md`](../docs/SPACETIME_CONTRACT.md).
 
 - Tables (public): `belonging` (`tracking` = false while enrolling), `sighting` (btree index on `belonging_id`), `alert`, `person`. Private: `bridge`.
 - Reducers: `register_bridge` (first caller becomes the bridge), `upsert_belonging`,
@@ -29,8 +29,8 @@ iwr https://windows.spacetimedb.com -useb | iex
 # 2. Start a local server (http://localhost:3000); leave this window open
 spacetime start
 
-# 3. In another terminal, from this `spacetime` folder: build + publish as "recallai"
-cd spacetime
+# 3. In another terminal, from this `spacetimedb` folder: build + publish as "recallai"
+cd spacetimedb
 npm install
 spacetime publish --server local recallai
 ```
@@ -47,7 +47,8 @@ spacetime sql  --server local recallai "SELECT * FROM sighting"
 Run after any change to `src/index.ts` (from this folder):
 
 ```powershell
-spacetime generate --lang typescript --out-dir ../web/src/module_bindings --module-path .
+spacetime generate --lang typescript --out-dir ../frontend/live-dashboard/src/module_bindings --module-path .
+# same thing from frontend/live-dashboard/:  npm run spacetime:generate
 ```
 
 ## Upgrading an existing database

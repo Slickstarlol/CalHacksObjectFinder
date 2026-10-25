@@ -503,7 +503,7 @@ class SpacetimeBridge:
                 if not down:
                     if isinstance(e, SpacetimeError) and e.status == 404:
                         msg = (f"database '{self.client.database}' not found at "
-                               f"{self.client.url} (publish the module in spacetime/)")
+                               f"{self.client.url} (publish the module in spacetimedb/)")
                     else:
                         msg = f"sync problem with {self.where}: {e}"
                     self.log(f"[SPACETIME] {msg}; dashboard sync paused, retrying")

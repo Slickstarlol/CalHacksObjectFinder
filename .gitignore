@@ -22,13 +22,9 @@ venv/
 # secrets
 .env
 
-# SpacetimeDB dashboard
+# SpacetimeDB bridge identity
 .spacetime_token
-web/node_modules/
-web/dist/
-spacetime/node_modules/
-spacetime/dist/
 
-# JSX dashboard (also covered by RecallAIFrontEnd/.gitignore)
-RecallAIFrontEnd/node_modules/
-RecallAIFrontEnd/dist/
+# node packages and builds
+node_modules/
+dist/

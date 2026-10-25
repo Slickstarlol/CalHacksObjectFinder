@@ -54,8 +54,8 @@ async def lifespan(app):
     Watcher(gps_provider=fresh_gps, interval=WATCH_INTERVAL).start()
     print("Grok agent:", "ON" if agent.enabled
           else "off (set XAI_API_KEY to enable)")
-    print("Dashboards: cd RecallAIFrontEnd && npm run dev  ->  http://localhost:5173")
-    print("            cd web && npm run dev  ->  http://localhost:5174"
+    print("Dashboards: cd frontend/dashboard && npm run dev       ->  http://localhost:5173")
+    print("            cd frontend/live-dashboard && npm run dev  ->  http://localhost:5174"
           "  (built: http://localhost:8000/app/)")
     bridge = None
     if os.environ.get("SPACETIME_SYNC", "1").strip() != "0":
@@ -72,8 +72,8 @@ async def lifespan(app):
 
 app = FastAPI(title="RecallAI", lifespan=lifespan)
 # Both Vite dev servers proxy /api and /snapshots, but allow direct calls too:
-# RecallAIFrontEnd/ (JSX dashboard) runs on :5173, web/ (SpacetimeDB live
-# dashboard) on :5174.
+# frontend/dashboard/ (JSX dashboard) runs on :5173, frontend/live-dashboard/
+# (SpacetimeDB live dashboard) on :5174.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

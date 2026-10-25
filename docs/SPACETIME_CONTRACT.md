@@ -2,7 +2,7 @@
 
 Read this first. Every component (module, Python bridge, React dashboard) must
 match it exactly. The SpacetimeDB **module source is the source of truth**:
-`spacetime/src/index.ts` (already written and smoke-tested — do not change
+`spacetimedb/src/index.ts` (already written and smoke-tested — do not change
 table/column/reducer names or argument order without telling the lead).
 
 ## Changelog
@@ -13,7 +13,7 @@ table/column/reducer names or argument order without telling the lead).
 ## Architecture
 
 ```
-webcam.py ─▶ SQLite memory.db (unchanged, still the primary store)
+webcam.py ─▶ SQLite data/memory.db (unchanged, still the primary store)
                  │
                  ▼  spacetime_bridge.py (background thread inside server.py)
           HTTP: POST {SPACETIME_URL}/v1/database/{DB}/call/{reducer}  (JSON array args, Bearer token)
@@ -21,7 +21,7 @@ webcam.py ─▶ SQLite memory.db (unchanged, still the primary store)
         SpacetimeDB database "recallai"  (tables: belonging, sighting, alert, person)
                  │  live WebSocket subscription (spacetimedb/react)
                  ▼
-        React dashboard (web/, Vite + React + TS)
+        React dashboard (frontend/live-dashboard/, Vite + React + TS)
            - images & Grok chat come from FastAPI (http://localhost:8000): /snapshots/*, POST /api/ask
            - "Dismiss" alert -> reducer dismiss_alert (browser) -> bridge copies dismissal back to SQLite
 ```
@@ -37,7 +37,7 @@ TypeScript keys are camelCase; SpacetimeDB column names (used in SQL) are snake_
 ### belonging — PK `id`
 | key (TS) | SQL column | type | source (SQLite / disk) |
 |---|---|---|---|
-| id | id | string | `belongings/<id>/info.json` id |
+| id | id | string | `data/belongings/<id>/info.json` id |
 | name | name | string | info.json name |
 | category | category | string | info.json category |
 | photos | photos | u32 | number of `reference_*` images |
@@ -113,12 +113,13 @@ HTTP calls send a **JSON array of arguments in exactly this order**. Python ints
 | delete_person | id | bridge (person removed from SQLite) |
 | dismiss_alert | id | anyone (dashboard) |
 
-React accessor names (generated bindings, already in `web/src/module_bindings/`):
+React accessor names (generated bindings, already in `frontend/live-dashboard/src/module_bindings/`):
 `tables.belonging`, `tables.sighting`, `tables.alert`, `tables.person`; `reducers.dismissAlert`, etc.;
 row types `Types.Belonging`, `Types.Sighting`, `Types.Alert`, `Types.Person` from `module_bindings/types`.
 u64/i64 fields arrive in JS as **bigint** (`id`, `seenAtMicros`, `sightingId`, `createdAtMicros`, `updatedAtMicros`).
 Regenerate them with the real CLI after any module change (never hand-edit):
-`spacetime generate --lang typescript --out-dir ../web/src/module_bindings --module-path .` (from `spacetime/`).
+`spacetime generate --lang typescript --out-dir ../frontend/live-dashboard/src/module_bindings --module-path .` (from `spacetimedb/`),
+or `npm run spacetime:generate` in `frontend/live-dashboard/`.
 
 ## Existing FastAPI endpoints the dashboard may use (server.py, port 8000)
 - `GET /snapshots/<file>` — images (paths as stored in imageUrl/cropUrl)
@@ -126,13 +127,13 @@ Regenerate them with the real CLI after any module change (never hand-edit):
   `{"answer": str, "sightings": [row dicts incl. id, crop_path, image_path, timestamp], "steps": [{tool,input}], "lookups"?: [...]}`
   (answer cites sightings as `[#id]`; 502 with `{"detail"}` if Grok fails)
 - `GET /api/belongings/{id}/last-seen` — temporal summary (relative_time etc.)
-- Also on the same server (used by `RecallAIFrontEnd/`): `GET/POST/PUT/DELETE /api/people`,
+- Also on the same server (used by `frontend/dashboard/`): `GET/POST/PUT/DELETE /api/people`,
   `GET /api/live`, `/api/live/frame.jpg`, `/api/live/stream` (camera mirror), `GET /api/enroll`,
   `POST /api/enroll/start|cancel` (camera enrollment).
 
 ## Two dashboards
-- `RecallAIFrontEnd/` (JSX, polls FastAPI): live camera, enrollment, people editor. Dev server `:5173`.
-- `web/` (TS, live SpacetimeDB subscription): belongings, sightings, alerts, people (read-only), Grok chat.
+- `frontend/dashboard/` (JSX, polls FastAPI): live camera, enrollment, people editor. Dev server `:5173`.
+- `frontend/live-dashboard/` (TS, live SpacetimeDB subscription): belongings, sightings, alerts, people (read-only), Grok chat.
   Dev server `:5174`; built copy served by FastAPI at `/app/`.
 Both proxy `/api` and `/snapshots` to `:8000`; FastAPI's CORS allows both dev origins.
 
@@ -144,7 +145,7 @@ Both proxy `/api` and `/snapshots` to `:8000`; FastAPI's CORS allows both dev or
   `VITE_API_BASE` (default "" → same origin / Vite proxy to http://localhost:8000)
 
 ## Ownership (agents must only edit their own files)
-- Module agent: `spacetime/**` (except `src/index.ts` contract changes need lead approval), `web/src/module_bindings/**` (review only)
-- Bridge agent: `spacetime_bridge.py`, `tests/test_spacetime_bridge.py`, `server.py`, `.gitignore`, `requirements.txt`
-- React agent: `web/**` except `web/src/module_bindings/**`
+- Module agent: `spacetimedb/**` (except `src/index.ts` contract changes need lead approval), `frontend/live-dashboard/src/module_bindings/**` (review only)
+- Bridge agent: `backend/recallai/sync/spacetime_bridge.py`, `backend/tests/test_spacetime_bridge.py`, `backend/recallai/api/server.py`, `.gitignore`, `backend/requirements.txt`
+- React agent: `frontend/live-dashboard/**` except `frontend/live-dashboard/src/module_bindings/**`
 - Nobody else edits `agent.py`, `webcam.py`, `recorder.py`, `db.py`, `temporal_memory.py`, `llm.py`, existing tests.
