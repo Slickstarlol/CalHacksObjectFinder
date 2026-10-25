@@ -28,6 +28,7 @@ export const Belonging = __t.object("Belonging", {
   name: __t.string(),
   category: __t.string(),
   photos: __t.u32(),
+  tracking: __t.bool(),
 });
 export type Belonging = __Infer<typeof Belonging>;
 
@@ -36,6 +37,17 @@ export const Bridge = __t.object("Bridge", {
   identity: __t.identity(),
 });
 export type Bridge = __Infer<typeof Bridge>;
+
+export const Person = __t.object("Person", {
+  id: __t.u64(),
+  name: __t.string(),
+  description: __t.string(),
+  relationship: __t.string(),
+  knownSince: __t.string(),
+  createdAtMicros: __t.i64(),
+  updatedAtMicros: __t.i64(),
+});
+export type Person = __Infer<typeof Person>;
 
 export const Sighting = __t.object("Sighting", {
   id: __t.u64(),

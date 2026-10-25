@@ -37,6 +37,7 @@ export default function App() {
     onUpdate: (oldRow, newRow) => record(classifyUpdate(oldRow, newRow), newRow),
   });
   const [alerts] = useTable(tables.alert.where(r => r.dismissed.eq(false)));
+  const [people] = useTable(tables.person);
   useEffect(() => {
     sightingsReady.current = sightingsLoaded;
   }, [sightingsLoaded]);
@@ -76,6 +77,7 @@ export default function App() {
       belongings={belongings}
       sightings={sightings}
       alerts={alerts}
+      people={people}
       activity={activity}
       now={now}
       apiBase={API_BASE}

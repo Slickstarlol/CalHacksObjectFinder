@@ -2,7 +2,17 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Dashboard, type DashboardProps } from './Dashboard';
-import { askEntries, belongings, makeActivity, makeAlerts, makeSighting, makeSightings, micros } from '../demo/fixtures';
+import {
+  askEntries,
+  belongings,
+  enrollingBelonging,
+  makeActivity,
+  makeAlerts,
+  makePeople,
+  makeSighting,
+  makeSightings,
+  micros,
+} from '../demo/fixtures';
 
 const NOW = new Date('2026-10-24T15:00:00Z').getTime();
 
@@ -190,5 +200,46 @@ describe('Dashboard', () => {
     expect(within(feed).getByText('Phone spotted')).toBeInTheDocument();
     expect(within(feed).getByText('Grok described My Laptop')).toBeInTheDocument();
     expect(within(feed).getByText('Water Bottle left view')).toBeInTheDocument();
+  });
+
+  describe('enrolling belongings (tracking = false)', () => {
+    it('shows an Enrolling badge instead of "Not seen yet"', () => {
+      setup({ belongings: [...belongings, enrollingBelonging] });
+      const cup = card('Cup 1');
+      expect(within(cup).getByText('2 angles saved')).toBeInTheDocument();
+      expect(within(cup).getByText('Enrolling…', { selector: '.badge' })).toBeInTheDocument();
+      expect(within(cup).queryByText('Not seen yet')).not.toBeInTheDocument();
+      expect(within(cup).getByText(/from a few more angles/)).toBeInTheDocument();
+      expect(within(cup).getByText('2 reference photos')).toBeInTheDocument();
+      // tracked belongings never show the badge
+      expect(within(card('My Mouse')).getByText('Not seen yet')).toBeInTheDocument();
+      expect(within(card('My Mouse')).queryByText('Enrolling…')).not.toBeInTheDocument();
+    });
+
+    it('drops the badge once enrollment finishes', () => {
+      const { rerender, props } = setup({ belongings: [enrollingBelonging] });
+      expect(within(card('Cup 1')).getByText('Enrolling…', { selector: '.badge' })).toBeInTheDocument();
+      rerender(<Dashboard {...props} belongings={[{ ...enrollingBelonging, photos: 5, tracking: true }]} />);
+      expect(within(card('Cup 1')).queryByText('Enrolling…')).not.toBeInTheDocument();
+      expect(within(card('Cup 1')).getByText('Not seen yet')).toBeInTheDocument();
+    });
+  });
+
+  describe('people panel', () => {
+    it('lists people alphabetically with relationship and how long known', () => {
+      setup({ people: makePeople(NOW) });
+      const panel = screen.getByRole('region', { name: 'People' });
+      const rows = within(panel).getAllByTestId('person');
+      expect(rows.map(r => within(r).getByText(/^(Chawin|Mom)$/).textContent)).toEqual(['Chawin', 'Mom']);
+      expect(within(rows[0]).getByText('teammate')).toBeInTheDocument();
+      expect(within(rows[0]).getByText(/^Known for 2 years and 1 month$/)).toBeInTheDocument();
+      expect(within(rows[0]).getByText('Tall, glasses, CalHacks hoodie.')).toBeInTheDocument();
+      expect(within(rows[1]).queryByText(/Known for/)).not.toBeInTheDocument();
+    });
+
+    it('shows an empty state', () => {
+      setup({ people: [] });
+      expect(screen.getByText('No people saved yet.')).toBeInTheDocument();
+    });
   });
 });

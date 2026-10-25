@@ -1,5 +1,5 @@
 /** Realistic sample data for the demo page and component tests. */
-import type { Alert, Belonging, Sighting } from '../module_bindings/types';
+import type { Alert, Belonging, Person, Sighting } from '../module_bindings/types';
 import type { ActivityItem } from '../lib/activity';
 import type { AskEntry } from '../components/types';
 
@@ -31,12 +31,30 @@ export function makeSighting(p: Partial<Sighting> & Pick<Sighting, 'id' | 'belon
 }
 
 export const belongings: Belonging[] = [
-  { id: 'a1f3c9e2b7d4', name: 'My Laptop', category: 'laptop', photos: 6 },
-  { id: 'b8e2d17c4a90', name: 'Water Bottle', category: 'bottle', photos: 4 },
-  { id: '3617519a583a', name: 'My Bag', category: 'backpack', photos: 5 },
-  { id: 'c42f0e9d1b6a', name: 'Phone', category: 'cell phone', photos: 3 },
-  { id: '365acc452f4e', name: 'My Mouse', category: 'mouse', photos: 2 },
+  { id: 'a1f3c9e2b7d4', name: 'My Laptop', category: 'laptop', photos: 6, tracking: true },
+  { id: 'b8e2d17c4a90', name: 'Water Bottle', category: 'bottle', photos: 4, tracking: true },
+  { id: '3617519a583a', name: 'My Bag', category: 'backpack', photos: 5, tracking: true },
+  { id: 'c42f0e9d1b6a', name: 'Phone', category: 'cell phone', photos: 3, tracking: true },
+  { id: '365acc452f4e', name: 'My Mouse', category: 'mouse', photos: 2, tracking: true },
 ];
+
+/** A belonging whose enrollment is still collecting angles (info.json tracking: false). */
+export const enrollingBelonging: Belonging = {
+  id: '7fcd5eb42abe', name: 'Cup 1', category: 'cup', photos: 2, tracking: false,
+};
+
+export function makePeople(now: number): Person[] {
+  return [
+    {
+      id: 2n, name: 'Mom', description: '', relationship: 'family', knownSince: '',
+      createdAtMicros: micros(now - 60 * MIN), updatedAtMicros: micros(now - 60 * MIN),
+    },
+    {
+      id: 1n, name: 'Chawin', description: 'Tall, glasses, CalHacks hoodie.', relationship: 'teammate',
+      knownSince: '2024-09-01', createdAtMicros: micros(now - 120 * MIN), updatedAtMicros: micros(now - 5 * MIN),
+    },
+  ];
+}
 
 export function makeSightings(now: number): Sighting[] {
   const img = (f: string) => `/demo/${f}`;

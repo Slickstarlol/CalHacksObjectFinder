@@ -1,8 +1,8 @@
 """Mirror RecallAI's SQLite memory into SpacetimeDB for the live dashboard.
 
 SQLite (memory.db) stays the primary store. This bridge:
-  * pushes belongings, sightings (only ones of *your* belongings) and alerts
-    to SpacetimeDB by calling the module's bridge-only reducers over HTTP;
+  * pushes belongings (incl. whether they are still enrolling), sightings
+    (only ones of *your* belongings), alerts and people to SpacetimeDB by calling the module's bridge-only reducers over HTTP;
   * re-pushes a row whenever it changes (e.g. Grok later fills in the
     description / place / verified columns);
   * copies alert dismissals made in the dashboard back into SQLite.
@@ -21,6 +21,7 @@ import argparse
 import json
 import math
 import os
+import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -120,9 +121,12 @@ def _num(v):
 
 
 def belonging_args(item):
-    """[id, name, category, photos]"""
+    """[id, name, category, photos, tracking]
+
+    tracking is False while the camera is still collecting the enrollment
+    angles (info.json "tracking": false); older belongings default to True."""
     return [str(item.id), _text(item.name), _text(item.category),
-            int(len(item.reference_paths))]
+            int(len(item.reference_paths)), bool(getattr(item, "tracking", True))]
 
 
 def sighting_args(row):
@@ -166,6 +170,21 @@ def alert_args(row):
         _text(r.get("message")),
         iso_to_micros(r.get("created_at")),
         bool(r.get("dismissed")),
+    ]
+
+
+def person_args(row):
+    """[id, name, description, relationship, knownSince, createdAtMicros,
+    updatedAtMicros]"""
+    r = dict(row)
+    return [
+        int(r["id"]),
+        _text(r.get("name")),
+        _text(r.get("description")),
+        _text(r.get("relationship")),
+        _text(r.get("known_since")),
+        iso_to_micros(r.get("created_at")),
+        iso_to_micros(r.get("updated_at")),
     ]
 
 
@@ -295,7 +314,7 @@ class SpacetimeBridge:
 
     def reset(self):
         """Forget what was pushed, so the next sync re-sends everything."""
-        self.pushed = {"belonging": {}, "sighting": {}, "alert": {}}
+        self.pushed = {"belonging": {}, "sighting": {}, "alert": {}, "person": {}}
         self._prune_belongings = True   # after (re)connect: delete rows that
         self._prune_rows = True         # vanished from disk/SQLite meanwhile
 
@@ -357,7 +376,7 @@ class SpacetimeBridge:
         if not self.registered:
             self.connect()
         counts = {"belongings": 0, "deleted_belongings": 0, "sightings": 0,
-                  "alerts": 0, "dismissed": 0}
+                  "alerts": 0, "people": 0, "dismissed": 0}
 
         # Was the database wiped since our last pass (republish --delete-data)?
         # Then nothing we pushed is there any more and our bridge registration
@@ -395,6 +414,10 @@ class SpacetimeBridge:
                 "SELECT * FROM sightings WHERE belonging_id IS NOT NULL "
                 "AND belonging_id != '' ORDER BY id").fetchall()
             alerts = db.execute("SELECT * FROM alerts ORDER BY id").fetchall()
+            try:
+                people = db.execute("SELECT * FROM people ORDER BY id").fetchall()
+            except sqlite3.OperationalError:
+                people = None   # memory.db not upgraded yet (no init_db): skip
 
         for row in sightings:
             counts["sightings"] += self._push(
@@ -402,6 +425,9 @@ class SpacetimeBridge:
         for row in alerts:
             counts["alerts"] += self._push(
                 "alert", int(row["id"]), "upsert_alert", alert_args(row))
+        for row in people or []:
+            counts["people"] += self._push(
+                "person", int(row["id"]), "upsert_person", person_args(row))
 
         # Rows deleted from SQLite (e.g. memory.db reset) -> delete them in
         # SpacetimeDB too, so the dashboard never shows ghosts.
@@ -409,6 +435,9 @@ class SpacetimeBridge:
             "sighting", {int(r["id"]) for r in sightings}, "delete_sighting")
         counts["deleted_alerts"] = self._prune(
             "alert", {int(r["id"]) for r in alerts}, "delete_alert")
+        if people is not None:
+            counts["deleted_people"] = self._prune(
+                "person", {int(r["id"]) for r in people}, "delete_person")
         self._prune_rows = False
 
         # Dismissals made in the dashboard -> SQLite

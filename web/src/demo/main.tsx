@@ -13,7 +13,9 @@ import type { Sighting } from '../module_bindings/types';
 import {
   askEntries,
   belongings,
+  enrollingBelonging,
   makeActivity,
+  makePeople,
   makeAlerts,
   makeSighting,
   makeSightings,
@@ -59,7 +61,8 @@ function Demo() {
     <Dashboard
       status={empty ? 'connecting' : 'live'}
       live
-      belongings={empty ? [] : belongings}
+      belongings={empty ? [] : [...belongings, enrollingBelonging]}
+      people={empty ? [] : makePeople(start)}
       sightings={empty ? [] : sightings}
       alerts={empty ? [] : alerts}
       activity={empty ? [] : activity}

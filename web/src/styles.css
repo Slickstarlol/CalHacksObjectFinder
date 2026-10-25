@@ -211,6 +211,10 @@ code {
   background: var(--warn-soft);
   color: var(--warn);
 }
+.badge-enrolling {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 /* ---------- header ---------- */
 .topbar {
@@ -1056,4 +1060,30 @@ button.thumb {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ---------- people ---------- */
+.people-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.person-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.person-name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.person-desc {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }

@@ -8,19 +8,23 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import DeleteAlertReducer from "../delete_alert_reducer";
 import DeleteBelongingReducer from "../delete_belonging_reducer";
+import DeletePersonReducer from "../delete_person_reducer";
 import DeleteSightingReducer from "../delete_sighting_reducer";
 import DismissAlertReducer from "../dismiss_alert_reducer";
 import RegisterBridgeReducer from "../register_bridge_reducer";
 import UpsertAlertReducer from "../upsert_alert_reducer";
 import UpsertBelongingReducer from "../upsert_belonging_reducer";
+import UpsertPersonReducer from "../upsert_person_reducer";
 import UpsertSightingReducer from "../upsert_sighting_reducer";
 
 export type DeleteAlertParams = __Infer<typeof DeleteAlertReducer>;
 export type DeleteBelongingParams = __Infer<typeof DeleteBelongingReducer>;
+export type DeletePersonParams = __Infer<typeof DeletePersonReducer>;
 export type DeleteSightingParams = __Infer<typeof DeleteSightingReducer>;
 export type DismissAlertParams = __Infer<typeof DismissAlertReducer>;
 export type RegisterBridgeParams = __Infer<typeof RegisterBridgeReducer>;
 export type UpsertAlertParams = __Infer<typeof UpsertAlertReducer>;
 export type UpsertBelongingParams = __Infer<typeof UpsertBelongingReducer>;
+export type UpsertPersonParams = __Infer<typeof UpsertPersonReducer>;
 export type UpsertSightingParams = __Infer<typeof UpsertSightingReducer>;
 

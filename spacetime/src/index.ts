@@ -25,6 +25,10 @@ const belonging = table(
     name: t.string(),
     category: t.string(),
     photos: t.u32(),
+    // false while the camera is still collecting the five enrollment angles
+    // (info.json "tracking": false); the matcher ignores it until then.
+    // Default true lets an already-published database add this column in place.
+    tracking: t.bool().default(true),
   }
 );
 
@@ -67,6 +71,20 @@ const alert = table(
   }
 );
 
+/** Someone the user wants RecallAI to remember (mirrors SQLite `people`). */
+const person = table(
+  { name: 'person', public: true },
+  {
+    id: t.u64().primaryKey(), // same id as SQLite
+    name: t.string(),
+    description: t.string(),
+    relationship: t.string(), // "friend", "teammate", ... or ""
+    knownSince: t.string(), // YYYY-MM-DD, "" if unknown
+    createdAtMicros: t.i64(),
+    updatedAtMicros: t.i64(),
+  }
+);
+
 /** The one identity allowed to write memory data (the Python bridge). Private. */
 const bridge = table(
   { name: 'bridge' },
@@ -76,7 +94,7 @@ const bridge = table(
   }
 );
 
-const spacetimedb = schema({ belonging, sighting, alert, bridge });
+const spacetimedb = schema({ belonging, sighting, alert, person, bridge });
 export default spacetimedb;
 
 type Ctx = Parameters<Parameters<typeof spacetimedb.reducer>[1]>[0];
@@ -99,7 +117,13 @@ export const register_bridge = spacetimedb.reducer(ctx => {
 });
 
 export const upsert_belonging = spacetimedb.reducer(
-  { id: t.string(), name: t.string(), category: t.string(), photos: t.u32() },
+  {
+    id: t.string(),
+    name: t.string(),
+    category: t.string(),
+    photos: t.u32(),
+    tracking: t.bool(),
+  },
   (ctx, args) => {
     requireBridge(ctx);
     if (!args.id) throw new SenderError('belonging id must not be empty');
@@ -185,6 +209,32 @@ export const delete_alert = spacetimedb.reducer(
   (ctx, { id }) => {
     requireBridge(ctx);
     ctx.db.alert.id.delete(id);
+  }
+);
+
+export const upsert_person = spacetimedb.reducer(
+  {
+    id: t.u64(),
+    name: t.string(),
+    description: t.string(),
+    relationship: t.string(),
+    knownSince: t.string(),
+    createdAtMicros: t.i64(),
+    updatedAtMicros: t.i64(),
+  },
+  (ctx, args) => {
+    requireBridge(ctx);
+    if (!args.name) throw new SenderError('person name must not be empty');
+    if (ctx.db.person.id.find(args.id)) ctx.db.person.id.update(args);
+    else ctx.db.person.insert(args);
+  }
+);
+
+export const delete_person = spacetimedb.reducer(
+  { id: t.u64() },
+  (ctx, { id }) => {
+    requireBridge(ctx);
+    ctx.db.person.id.delete(id);
   }
 );
 

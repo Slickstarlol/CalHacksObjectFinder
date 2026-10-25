@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Alert, Belonging, Sighting } from '../module_bindings/types';
+import type { Alert, Belonging, Person, Sighting } from '../module_bindings/types';
 import type { ActivityItem } from '../lib/activity';
 import {
   activeAlerts,
@@ -14,6 +14,7 @@ import { AskPanel } from './AskPanel';
 import { BelongingCard } from './BelongingCard';
 import { Header } from './Header';
 import { Lightbox } from './Lightbox';
+import { PeoplePanel } from './PeoplePanel';
 import { TimelineDrawer } from './TimelineDrawer';
 import type { AskEntry, ConnectionStatus } from './types';
 
@@ -24,6 +25,8 @@ export type DashboardProps = {
   belongings: readonly Belonging[];
   sightings: readonly Sighting[];
   alerts: readonly Alert[];
+  /** People mirrored from SQLite `people`; optional so older callers still work. */
+  people?: readonly Person[];
   activity: ActivityItem[];
   now: Date;
   apiBase: string;
@@ -143,6 +146,7 @@ export function Dashboard(props: DashboardProps) {
             onOpenImage={openImage}
           />
           <ActivityFeed items={activity} now={now} apiBase={apiBase} onSelect={setSelectedId} />
+          <PeoplePanel people={props.people ?? []} now={now} />
         </div>
       </main>
       {selected && (

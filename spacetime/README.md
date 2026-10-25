@@ -1,14 +1,15 @@
 # RecallAI SpacetimeDB module
 
 The live, shared copy of RecallAI's memory. Python still writes to SQLite first;
-`spacetime_bridge.py` mirrors belongings, sightings and alerts here through the
+`spacetime_bridge.py` mirrors belongings, sightings, alerts and people here through the
 bridge-only reducers, and the React dashboard (`../web`) subscribes over WebSocket
 so new sightings and alerts appear instantly. The spec is
 [`../SPACETIME_CONTRACT.md`](../SPACETIME_CONTRACT.md).
 
-- Tables (public): `belonging`, `sighting` (btree index on `belonging_id`), `alert`. Private: `bridge`.
+- Tables (public): `belonging` (`tracking` = false while enrolling), `sighting` (btree index on `belonging_id`), `alert`, `person`. Private: `bridge`.
 - Reducers: `register_bridge` (first caller becomes the bridge), `upsert_belonging`,
-  `delete_belonging`, `upsert_sighting`, `delete_sighting`, `upsert_alert` (bridge only),
+  `delete_belonging`, `upsert_sighting`, `delete_sighting`, `upsert_alert`, `delete_alert`,
+  `upsert_person`, `delete_person` (bridge only),
   `dismiss_alert` (anyone; a later bridge upsert never un-dismisses).
 
 ## Test (no server needed)
@@ -48,6 +49,12 @@ Run after any change to `src/index.ts` (from this folder):
 ```powershell
 spacetime generate --lang typescript --out-dir ../web/src/module_bindings --module-path .
 ```
+
+## Upgrading an existing database
+
+New columns are appended with a default (e.g. `belonging.tracking` defaults to true)
+and new tables are additive, so a plain `spacetime publish --server local recallai`
+upgrades in place and keeps the data.
 
 ## Clear all data
 

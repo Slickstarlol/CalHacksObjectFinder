@@ -20,13 +20,27 @@ const STRANGER = auth('stranger', 3n);
 type SightingArgs = Parameters<typeof m.upsert_sighting>[1];
 type AlertArgs = Parameters<typeof m.upsert_alert>[1];
 type BelongingArgs = Parameters<typeof m.upsert_belonging>[1];
+type PersonArgs = Parameters<typeof m.upsert_person>[1];
 
 const U64_MAX = (1n << 64n) - 1n;
 const I64_MAX = (1n << 63n) - 1n;
 const I64_MIN = -(1n << 63n);
 
 function belongingArgs(over: Partial<BelongingArgs> = {}): BelongingArgs {
-  return { id: 'mouse1', name: 'My Mouse', category: 'mouse', photos: 3, ...over };
+  return { id: 'mouse1', name: 'My Mouse', category: 'mouse', photos: 3, tracking: true, ...over };
+}
+
+function personArgs(over: Partial<PersonArgs> = {}): PersonArgs {
+  return {
+    id: 1n,
+    name: 'Chawin',
+    description: 'Tall, glasses, usually in a CalHacks hoodie.',
+    relationship: 'teammate',
+    knownSince: '2024-09-01',
+    createdAtMicros: 1792860000000000n,
+    updatedAtMicros: 1792860000000001n,
+    ...over,
+  };
 }
 
 function sightingArgs(over: Partial<SightingArgs> = {}): SightingArgs {
@@ -78,6 +92,7 @@ const counts = (h: H) => ({
   belonging: Number(h.db.belonging.count()),
   sighting: Number(h.db.sighting.count()),
   alert: Number(h.db.alert.count()),
+  person: Number(h.db.person.count()),
 });
 
 /** Runs a reducer call expecting a SenderError with a matching message. */
@@ -154,7 +169,15 @@ describe('register_bridge', () => {
       () => h.withReducerTx(BRIDGE, ctx => m.delete_sighting(ctx, { id: 1n })),
       /bridge/
     );
-    expect(counts(h)).toEqual({ belonging: 0, sighting: 0, alert: 0 });
+    expectSenderError(
+      () => h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs())),
+      /bridge/
+    );
+    expectSenderError(
+      () => h.withReducerTx(BRIDGE, ctx => m.delete_person(ctx, { id: 1n })),
+      /bridge/
+    );
+    expect(counts(h)).toEqual({ belonging: 0, sighting: 0, alert: 0, person: 0 });
     expect(Number(h.db.bridge.count())).toBe(0);
   });
 });
@@ -470,7 +493,7 @@ describe('transactions', () => {
         m.upsert_sighting(ctx, sightingArgs({ event: 'bogus' }));
       })
     ).toThrow(/unknown event/);
-    expect(counts(h)).toEqual({ belonging: 0, sighting: 0, alert: 0 });
+    expect(counts(h)).toEqual({ belonging: 0, sighting: 0, alert: 0, person: 0 });
   });
 });
 
@@ -484,7 +507,7 @@ describe('contract smoke', () => {
     expect(h.db.sighting.id.find(7n)?.belongingName).toBe('My Mouse');
     expect(() =>
       h.withReducerTx(BROWSER, ctx =>
-        m.upsert_belonging(ctx, { id: 'x', name: 'X', category: 'mouse', photos: 1 })
+        m.upsert_belonging(ctx, { id: 'x', name: 'X', category: 'mouse', photos: 1, tracking: true })
       )
     ).toThrow(/bridge/);
     h.withReducerTx(BRIDGE, ctx => m.upsert_alert(ctx, alertArgs()));
@@ -506,5 +529,80 @@ describe('delete_alert (added after review)', () => {
     h.withReducerTx(b, ctx => m.delete_alert(ctx, { id: 5n }));
     expect(h.db.alert.id.find(5n)).toBeNull();
     h.withReducerTx(b, ctx => m.delete_alert(ctx, { id: 5n }));
+  });
+});
+
+describe('belonging.tracking (enrollment in progress)', () => {
+  it('stores tracking=false and flips to true when enrollment finishes', () => {
+    const h = setup();
+    h.withReducerTx(BRIDGE, ctx =>
+      m.upsert_belonging(ctx, belongingArgs({ photos: 2, tracking: false })));
+    expect(h.db.belonging.id.find('mouse1')).toEqual(
+      belongingArgs({ photos: 2, tracking: false }));
+    h.withReducerTx(BRIDGE, ctx =>
+      m.upsert_belonging(ctx, belongingArgs({ photos: 5, tracking: true })));
+    const row = h.db.belonging.id.find('mouse1')!;
+    expect(row.tracking).toBe(true);
+    expect(row.photos).toBe(5);
+    // tracking is the LAST column, so [id, name, category, photos] keep their order.
+    expect(Object.keys(row)).toEqual(['id', 'name', 'category', 'photos', 'tracking']);
+    expect(counts(h).belonging).toBe(1);
+  });
+});
+
+describe('upsert_person / delete_person', () => {
+  it('inserts then updates the same id without duplicating', () => {
+    const h = setup();
+    h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs()));
+    expect(h.db.person.id.find(1n)).toEqual(personArgs());
+    const updated = personArgs({ relationship: 'friend', knownSince: '', updatedAtMicros: I64_MAX });
+    h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, updated));
+    expect(h.db.person.id.find(1n)).toEqual(updated);
+    h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs({ id: U64_MAX, name: 'Kent' })));
+    expect(counts(h).person).toBe(2);
+    const row = h.db.person.id.find(1n)!;
+    expect(Object.keys(row)).toEqual(['id', 'name', 'description', 'relationship',
+      'knownSince', 'createdAtMicros', 'updatedAtMicros']);
+    expect(typeof row.id).toBe('bigint');
+    expect(typeof row.createdAtMicros).toBe('bigint');
+  });
+
+  it('rejects an empty name', () => {
+    const h = setup();
+    expectSenderError(
+      () => h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs({ name: '' }))),
+      /must not be empty/
+    );
+    expect(counts(h).person).toBe(0);
+  });
+
+  it('rejects non-bridge callers and leaves state unchanged', () => {
+    const h = setup();
+    h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs()));
+    for (const who of [BROWSER, STRANGER]) {
+      expectSenderError(
+        () => h.withReducerTx(who, ctx => m.upsert_person(ctx, personArgs({ name: 'HACKED' }))),
+        /bridge/
+      );
+      expectSenderError(
+        () => h.withReducerTx(who, ctx => m.upsert_person(ctx, personArgs({ id: 9n }))),
+        /bridge/
+      );
+      expectSenderError(
+        () => h.withReducerTx(who, ctx => m.delete_person(ctx, { id: 1n })),
+        /bridge/
+      );
+    }
+    expect(h.db.person.id.find(1n)).toEqual(personArgs());
+    expect(counts(h).person).toBe(1);
+  });
+
+  it('bridge deletes; deleting a missing id is a silent no-op', () => {
+    const h = setup();
+    h.withReducerTx(BRIDGE, ctx => m.upsert_person(ctx, personArgs()));
+    h.withReducerTx(BRIDGE, ctx => m.delete_person(ctx, { id: 1n }));
+    expect(h.db.person.id.find(1n)).toBeNull();
+    expect(() => h.withReducerTx(BRIDGE, ctx => m.delete_person(ctx, { id: 1n }))).not.toThrow();
+    expect(counts(h).person).toBe(0);
   });
 });

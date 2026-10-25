@@ -2,7 +2,7 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { belongings, makeAlerts, makeSighting, makeSightings, micros } from './demo/fixtures';
+import { belongings, makeAlerts, makePeople, makeSighting, makeSightings, micros } from './demo/fixtures';
 import type { Sighting } from './module_bindings/types';
 
 const NOW = Date.now();
@@ -11,6 +11,7 @@ const state = {
   belongings,
   sightings: makeSightings(NOW) as Sighting[],
   alerts: makeAlerts(NOW).filter(a => !a.dismissed),
+  people: makePeople(NOW),
   callbacks: {} as { onInsert?: (r: Sighting) => void; onUpdate?: (o: Sighting, n: Sighting) => void },
   dismiss: vi.fn().mockResolvedValue(undefined),
 };
@@ -19,11 +20,11 @@ vi.mock('spacetimedb/react', () => {
   let call = 0;
   return {
     useSpacetimeDB: () => ({ isActive: state.isActive, connectionError: undefined }),
-    // App calls useTable for belonging, sighting, alert in that order on every render.
+    // App calls useTable for belonging, sighting, alert, person in that order on every render.
     useTable: (_q: unknown, cb?: typeof state.callbacks) => {
-      const i = call++ % 3;
+      const i = call++ % 4;
       if (i === 1 && cb) state.callbacks = cb;
-      return [[state.belongings, state.sightings, state.alerts][i], true];
+      return [[state.belongings, state.sightings, state.alerts, state.people][i], true];
     },
     useReducer: () => state.dismiss,
   };
@@ -45,6 +46,11 @@ describe('App container', () => {
     expect(state.dismiss).toHaveBeenCalledWith({ id: 77n });
     // optimistically hidden
     expect(screen.getAllByRole('button', { name: 'Dismiss' })).toHaveLength(1);
+    // live person table reaches the People panel
+    expect(screen.getAllByTestId('person').map(p => p.textContent)).toEqual([
+      expect.stringContaining('Chawin'),
+      expect.stringContaining('Mom'),
+    ]);
   });
 
   it('records live sighting inserts in the activity feed', () => {

@@ -22,9 +22,14 @@ export function BelongingCard({ belonging, latest, now, apiBase, live, onSelect 
   const seenAt = latest ? microsToDate(latest.seenAtMicros) : null;
   const nearby = latest ? splitNearby(latest.nearby) : [];
   const left = latest?.event === 'left_view';
+  // Still collecting reference angles (enroll.py): the camera ignores it until done.
+  const enrolling = !belonging.tracking;
 
   return (
-    <article className={`card${flash ? ' card-flash' : ''}${latest ? '' : ' card-never'}`} data-testid="belonging-card">
+    <article
+      className={`card${flash ? ' card-flash' : ''}${latest ? '' : ' card-never'}${enrolling ? ' card-enrolling' : ''}`}
+      data-testid="belonging-card"
+    >
       <button
         type="button"
         className="card-hit"
@@ -36,13 +41,24 @@ export function BelongingCard({ belonging, latest, now, apiBase, live, onSelect 
           <Thumb src={thumbUrl(latest, apiBase)} alt={`${belonging.name}, last sighting`} />
         ) : (
           <span className="thumb thumb-never">
-            <span>Not seen yet</span>
+            <span>
+              {enrolling
+                ? `${belonging.photos} angle${belonging.photos === 1 ? '' : 's'} saved`
+                : 'Not seen yet'}
+            </span>
           </span>
         )}
-        {latest && (
+        {(latest || enrolling) && (
           <div className="badges">
-            <span className={`badge ${left ? 'badge-left' : 'badge-seen'}`}>{eventLabel(latest.event)}</span>
-            {latest.verified === -1 && (
+            {enrolling && (
+              <span className="badge badge-enrolling" title="Still collecting reference angles">
+                Enrolling…
+              </span>
+            )}
+            {latest && (
+              <span className={`badge ${left ? 'badge-left' : 'badge-seen'}`}>{eventLabel(latest.event)}</span>
+            )}
+            {latest?.verified === -1 && (
               <span className="badge badge-unchecked" title="Grok hasn’t verified this match yet">
                 Unchecked
               </span>
@@ -88,7 +104,11 @@ export function BelongingCard({ belonging, latest, now, apiBase, live, onSelect 
             )}
           </>
         ) : (
-          <p className="card-desc waiting">The camera hasn’t spotted this yet.</p>
+          <p className="card-desc waiting">
+            {enrolling
+              ? 'Hold it in front of the camera from a few more angles to start tracking.'
+              : 'The camera hasn’t spotted this yet.'}
+          </p>
         )}
         <footer className="card-foot">
           <span>

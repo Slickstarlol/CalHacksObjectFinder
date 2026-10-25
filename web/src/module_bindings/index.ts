@@ -36,11 +36,13 @@ import {
 // Import all reducer arg schemas
 import DeleteAlertReducer from "./delete_alert_reducer";
 import DeleteBelongingReducer from "./delete_belonging_reducer";
+import DeletePersonReducer from "./delete_person_reducer";
 import DeleteSightingReducer from "./delete_sighting_reducer";
 import DismissAlertReducer from "./dismiss_alert_reducer";
 import RegisterBridgeReducer from "./register_bridge_reducer";
 import UpsertAlertReducer from "./upsert_alert_reducer";
 import UpsertBelongingReducer from "./upsert_belonging_reducer";
+import UpsertPersonReducer from "./upsert_person_reducer";
 import UpsertSightingReducer from "./upsert_sighting_reducer";
 
 // Import all procedure arg schemas
@@ -48,6 +50,7 @@ import UpsertSightingReducer from "./upsert_sighting_reducer";
 // Import all table schema definitions
 import AlertRow from "./alert_table";
 import BelongingRow from "./belonging_table";
+import PersonRow from "./person_table";
 import SightingRow from "./sighting_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -76,6 +79,17 @@ const tablesSchema = __schema({
       { name: 'belonging_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, BelongingRow),
+  person: __table({
+    name: 'person',
+    indexes: [
+      { accessor: 'id', name: 'person_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'person_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PersonRow),
   sighting: __table({
     name: 'sighting',
     indexes: [
@@ -96,11 +110,13 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("delete_alert", DeleteAlertReducer),
   __reducerSchema("delete_belonging", DeleteBelongingReducer),
+  __reducerSchema("delete_person", DeletePersonReducer),
   __reducerSchema("delete_sighting", DeleteSightingReducer),
   __reducerSchema("dismiss_alert", DismissAlertReducer),
   __reducerSchema("register_bridge", RegisterBridgeReducer),
   __reducerSchema("upsert_alert", UpsertAlertReducer),
   __reducerSchema("upsert_belonging", UpsertBelongingReducer),
+  __reducerSchema("upsert_person", UpsertPersonReducer),
   __reducerSchema("upsert_sighting", UpsertSightingReducer),
 );
 

@@ -53,10 +53,10 @@ describe('groupVisibleByBelonging / timelineFor', () => {
 describe('sortBelongings', () => {
   it('orders by most recently seen, never-seen last alphabetically', () => {
     const bs = [
-      { id: 'z', name: 'Zeta', category: '', photos: 0 },
-      { id: 'b', name: 'B', category: '', photos: 0 },
-      { id: 'y', name: 'Alpha', category: '', photos: 0 },
-      { id: 'a', name: 'A', category: '', photos: 0 },
+      { id: 'z', name: 'Zeta', category: '', photos: 0, tracking: true },
+      { id: 'b', name: 'B', category: '', photos: 0, tracking: true },
+      { id: 'y', name: 'Alpha', category: '', photos: 0, tracking: true },
+      { id: 'a', name: 'A', category: '', photos: 0, tracking: true },
     ];
     expect(sortBelongings(bs, latestVisibleByBelonging(rows)).map(b => b.id)).toEqual(['a', 'b', 'y', 'z']);
   });

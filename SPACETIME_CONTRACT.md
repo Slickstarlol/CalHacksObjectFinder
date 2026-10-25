@@ -5,6 +5,11 @@ match it exactly. The SpacetimeDB **module source is the source of truth**:
 `spacetime/src/index.ts` (already written and smoke-tested — do not change
 table/column/reducer names or argument order without telling the lead).
 
+## Changelog
+- v2 (merge with people/enrollment): `belonging.tracking` (last column, default true),
+  new table `person`, reducers `upsert_person` / `delete_person`. Existing arg orders unchanged
+  except `upsert_belonging`, which gains a trailing `tracking` arg.
+
 ## Architecture
 
 ```
@@ -13,7 +18,7 @@ webcam.py ─▶ SQLite memory.db (unchanged, still the primary store)
                  ▼  spacetime_bridge.py (background thread inside server.py)
           HTTP: POST {SPACETIME_URL}/v1/database/{DB}/call/{reducer}  (JSON array args, Bearer token)
                  ▼
-        SpacetimeDB database "recallai"  (tables: belonging, sighting, alert)
+        SpacetimeDB database "recallai"  (tables: belonging, sighting, alert, person)
                  │  live WebSocket subscription (spacetimedb/react)
                  ▼
         React dashboard (web/, Vite + React + TS)
@@ -36,6 +41,9 @@ TypeScript keys are camelCase; SpacetimeDB column names (used in SQL) are snake_
 | name | name | string | info.json name |
 | category | category | string | info.json category |
 | photos | photos | u32 | number of `reference_*` images |
+| tracking | tracking | bool | info.json `tracking` (missing → true). **false while enrolling**: `enroll.py` creates the folder with `"tracking": false` and flips it to true once all 5 angles are saved; the matcher ignores it until then. Last column, `default(true)`, so an already-published database upgrades in place (no `--delete-data`). |
+
+The dashboard shows an **"Enrolling…"** badge (not "Not seen yet") for `tracking = false`.
 
 ### sighting — PK `id`, btree index on `belongingId`
 | key (TS) | SQL column | type | from SQLite `sightings` |
@@ -74,6 +82,20 @@ Sightings with `verified = 0` (Grok: not yours) ARE synced with verified=0; the 
 
 Only alerts with `dismissed = 0` in SQLite need to be pushed initially, but pushing all is fine (idempotent).
 
+### person — PK `id`
+| key (TS) | SQL column | type | from SQLite `people` (managed by `people.py`, `/api/people`) |
+|---|---|---|---|
+| id | id | u64 | id |
+| name | name | string | name (never empty; reducer rejects "") |
+| description | description | string | description |
+| relationship | relationship | string | relationship ("" if none) |
+| knownSince | known_since | string | known_since `YYYY-MM-DD`, or "" if NULL |
+| createdAtMicros | created_at_micros | i64 | created_at (ISO) → microseconds |
+| updatedAtMicros | updated_at_micros | i64 | updated_at (ISO) → microseconds |
+
+"How long you've known them" is derived from `knownSince` at read time (same rule as `people.known_for`).
+All rows are synced; people deleted in SQLite are deleted here (same pruning as sightings/alerts).
+
 ## Reducers
 
 HTTP calls send a **JSON array of arguments in exactly this order**. Python ints are fine for u64/i64/u32/i32.
@@ -81,18 +103,22 @@ HTTP calls send a **JSON array of arguments in exactly this order**. Python ints
 | reducer | args (in order) | who may call |
 |---|---|---|
 | register_bridge | (none → body `[]`) | first caller becomes the bridge; same identity may repeat |
-| upsert_belonging | id, name, category, photos | bridge |
+| upsert_belonging | id, name, category, photos, tracking | bridge |
 | delete_belonging | id | bridge |
 | upsert_sighting | id, belongingId, belongingName, objectName, event, seenAtMicros, imageUrl, cropUrl, description, place, nearby, matchScore, verified, hasGps, latitude, longitude | bridge |
 | delete_sighting | id | bridge |
 | upsert_alert | id, belongingId, belongingName, sightingId, reason, urgency, message, createdAtMicros, dismissed | bridge (a dashboard dismissal is never undone by a stale upsert) |
 | delete_alert | id | bridge (alert removed from SQLite) |
+| upsert_person | id, name, description, relationship, knownSince, createdAtMicros, updatedAtMicros | bridge |
+| delete_person | id | bridge (person removed from SQLite) |
 | dismiss_alert | id | anyone (dashboard) |
 
 React accessor names (generated bindings, already in `web/src/module_bindings/`):
-`tables.belonging`, `tables.sighting`, `tables.alert`; `reducers.dismissAlert`, etc.;
-row types `Types.Belonging`, `Types.Sighting`, `Types.Alert` from `module_bindings/types`.
-u64/i64 fields arrive in JS as **bigint** (`id`, `seenAtMicros`, `sightingId`, `createdAtMicros`).
+`tables.belonging`, `tables.sighting`, `tables.alert`, `tables.person`; `reducers.dismissAlert`, etc.;
+row types `Types.Belonging`, `Types.Sighting`, `Types.Alert`, `Types.Person` from `module_bindings/types`.
+u64/i64 fields arrive in JS as **bigint** (`id`, `seenAtMicros`, `sightingId`, `createdAtMicros`, `updatedAtMicros`).
+Regenerate them with the real CLI after any module change (never hand-edit):
+`spacetime generate --lang typescript --out-dir ../web/src/module_bindings --module-path .` (from `spacetime/`).
 
 ## Existing FastAPI endpoints the dashboard may use (server.py, port 8000)
 - `GET /snapshots/<file>` — images (paths as stored in imageUrl/cropUrl)
@@ -100,6 +126,15 @@ u64/i64 fields arrive in JS as **bigint** (`id`, `seenAtMicros`, `sightingId`, `
   `{"answer": str, "sightings": [row dicts incl. id, crop_path, image_path, timestamp], "steps": [{tool,input}], "lookups"?: [...]}`
   (answer cites sightings as `[#id]`; 502 with `{"detail"}` if Grok fails)
 - `GET /api/belongings/{id}/last-seen` — temporal summary (relative_time etc.)
+- Also on the same server (used by `RecallAIFrontEnd/`): `GET/POST/PUT/DELETE /api/people`,
+  `GET /api/live`, `/api/live/frame.jpg`, `/api/live/stream` (camera mirror), `GET /api/enroll`,
+  `POST /api/enroll/start|cancel` (camera enrollment).
+
+## Two dashboards
+- `RecallAIFrontEnd/` (JSX, polls FastAPI): live camera, enrollment, people editor. Dev server `:5173`.
+- `web/` (TS, live SpacetimeDB subscription): belongings, sightings, alerts, people (read-only), Grok chat.
+  Dev server `:5174`; built copy served by FastAPI at `/app/`.
+Both proxy `/api` and `/snapshots` to `:8000`; FastAPI's CORS allows both dev origins.
 
 ## Config (env vars, also readable from `.env` via llm.load_env_file)
 - `SPACETIME_URL` (default `http://localhost:3000`)

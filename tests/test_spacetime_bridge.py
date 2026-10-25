@@ -33,6 +33,7 @@ class FakeSpacetime:
         self.belonging_ids = []  # rows of `SELECT id FROM belonging`
         self.sighting_ids = []   # rows of `SELECT id FROM sighting`
         self.alert_ids = []      # rows of `SELECT id FROM alert`
+        self.person_ids = []     # rows of `SELECT id FROM person`
         self.status = {}         # reducer -> (status, text) for one-off errors
         self.remote_belongings = set()   # what upsert/delete_belonging left behind
         self.register_error = None
@@ -58,6 +59,8 @@ class FakeSpacetime:
                 rows = [[i] for i in self.alert_ids]
             elif "FROM sighting" in q:
                 rows = [[i] for i in self.sighting_ids]
+            elif "FROM person" in q:
+                rows = [[i] for i in self.person_ids]
             else:
                 rows = [[i] for i in sorted(set(self.belonging_ids) | self.remote_belongings)]
             return FakeResponse(200, [{"schema": {"elements": [
@@ -203,8 +206,9 @@ def test_plain_token_file_accepted(world):
 def test_belongings_pushed_in_contract_order(world):
     world.bridge.sync_once()
     calls = world.fake.reducer_calls("upsert_belonging")
-    assert calls == [("upsert_belonging", ["bag1", "My Bag", "backpack", 3]),
-                     ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 0])]
+    assert calls == [("upsert_belonging", ["bag1", "My Bag", "backpack", 3, True]),
+                     ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 0, True])]
+    assert type(calls[0][1][4]) is bool
     # sql bodies are raw text with the right path
     sql = [(p, b) for p, _, b in world.fake.calls if p.endswith("/sql")]
     assert sql and all(p == "/v1/database/recallai/sql" for p, _ in sql)
@@ -336,7 +340,7 @@ def test_photo_count_change_repushes_belonging(world):
     register(world.dir, "My Mouse", "mouse", [make_object_image(RED)], item_id="mouse1")
     world.bridge.sync_once()
     assert world.fake.reducer_calls("upsert_belonging") == [
-        ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 1])]
+        ("upsert_belonging", ["mouse1", "My Mouse", "mouse", 1, True])]
 
 
 def test_rejected_row_does_not_block_others(world):
@@ -586,3 +590,133 @@ def test_idle_wipe_is_detected_without_any_failed_write(world):
     assert world.fake.reducer_calls("register_bridge") == [("register_bridge", [])]
     assert len(world.fake.reducer_calls("upsert_sighting")) == 1
     assert len(world.fake.reducer_calls("upsert_belonging")) == 2
+
+
+# ------------------------------------------------------------ enrollment (tracking)
+def test_enrolling_belonging_synced_with_tracking_false_then_flips(world):
+    """enroll.py writes info.json with "tracking": false until all angles are
+    saved; the dashboard needs that to show "Enrolling..." instead of "Not seen"."""
+    import enroll
+    img = make_object_image(RED, seed=9)
+    info, n = enroll.save_angle(world.dir, "cup", img)
+    assert n == 1 and info["tracking"] is False
+    world.bridge.sync_once()
+    calls = {a[0]: a for _, a in world.fake.reducer_calls("upsert_belonging")}
+    assert calls[info["id"]] == [info["id"], info["name"], "cup", 1, False]
+    assert calls["bag1"][4] is True                    # no key in info.json -> tracking
+
+    for _ in range(enroll.ANGLES - 1):
+        info, n = enroll.save_angle(world.dir, "cup", img, belonging_id=info["id"])
+    assert info["tracking"] is True
+    world.fake.clear()
+    world.bridge.sync_once()
+    assert world.fake.reducer_calls("upsert_belonging") == [
+        ("upsert_belonging", [info["id"], info["name"], "cup", enroll.ANGLES, True])]
+
+
+# ------------------------------------------------------------ people
+def add_person(name="Chawin", known_since="2024-09-01", description="Glasses",
+               relationship="teammate"):
+    with dbmod.connect() as db:
+        cur = db.execute(
+            "INSERT INTO people (name, description, relationship, known_since,"
+            " created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (name, description, relationship, known_since,
+             "2026-10-24T15:00:00+00:00", "2026-10-24T15:00:00.000001+00:00"))
+        db.commit()
+        return cur.lastrowid
+
+
+def test_upsert_person_args_in_contract_order(world):
+    p1 = add_person()
+    p2 = add_person(name="Kent", known_since=None, description="", relationship="")
+    counts = world.bridge.sync_once()
+    assert counts["people"] == 2
+    assert world.fake.reducer_calls("upsert_person") == [
+        ("upsert_person", [p1, "Chawin", "Glasses", "teammate", "2024-09-01",
+                           1792854000_000000, 1792854000_000001]),
+        ("upsert_person", [p2, "Kent", "", "", "", 1792854000_000000,
+                           1792854000_000001]),
+    ]
+
+
+def test_person_edit_repushed_and_delete_pruned(world):
+    keep, gone = add_person(), add_person(name="Old friend")
+    world.bridge.sync_once()
+    world.fake.clear()
+    world.bridge.sync_once()
+    assert world.fake.reducer_calls() == []            # unchanged -> nothing sent
+
+    with dbmod.connect() as db:                        # PUT /api/people/{id}
+        db.execute("UPDATE people SET relationship='friend', "
+                   "updated_at='2026-10-24T16:00:00+00:00' WHERE id=?", (keep,))
+        db.execute("DELETE FROM people WHERE id=?", (gone,))
+        db.commit()
+    counts = world.bridge.sync_once()
+    [(_, args)] = world.fake.reducer_calls("upsert_person")
+    assert args[0] == keep and args[3] == "friend"
+    assert world.fake.reducer_calls("delete_person") == [("delete_person", [gone])]
+    assert counts["deleted_people"] == 1
+
+
+def test_people_via_api_reach_spacetime(world):
+    """The real people router (Chawin's /api/people) feeds the bridge."""
+    import people
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(people.router)
+    c = TestClient(app)
+    pid = c.post("/api/people", json={"name": "Chawin", "relationship": "teammate",
+                                      "known_since": "2024-09-01"}).json()["id"]
+    world.bridge.sync_once()
+    [(_, args)] = world.fake.reducer_calls("upsert_person")
+    assert args[:5] == [pid, "Chawin", "", "teammate", "2024-09-01"]
+    assert args[5] > 0 and args[6] >= args[5]
+    c.delete(f"/api/people/{pid}")
+    world.bridge.sync_once()
+    assert world.fake.reducer_calls("delete_person") == [("delete_person", [pid])]
+
+
+def test_ghost_people_deleted_on_connect(world):
+    p = add_person()
+    world.fake.person_ids = [p, 500]
+    world.bridge.sync_once()
+    assert world.fake.reducer_calls("delete_person") == [("delete_person", [500])]
+    world.fake.clear()
+    world.bridge.sync_once()
+    assert world.fake.reducer_calls("delete_person") == []
+
+
+def test_people_resent_after_republish_wipe(world):
+    p = add_person()
+    world.bridge.sync_once()
+    world.fake.remote_belongings.clear()               # republish --delete-data
+    with pytest.raises(sb.BridgeLost):
+        world.bridge.sync_once()
+    world.fake.clear()
+    world.bridge.sync_once()
+    assert [a[0] for _, a in world.fake.reducer_calls("upsert_person")] == [p]
+
+
+def test_person_rejected_does_not_block_others(world):
+    add_person()
+    add_alert()
+    world.fake.reject["upsert_person"] = "person name must not be empty"
+    world.bridge.sync_once()
+    world.bridge.sync_once()
+    assert len(world.fake.reducer_calls("upsert_alert")) == 1
+    assert len(world.fake.reducer_calls("upsert_person")) == 1
+    assert sum("rejected" in l for l in world.logs) == 1
+
+
+def test_db_without_people_table_still_syncs(world):
+    """A memory.db the bridge reads before init_db ran (old schema): no crash,
+    and remote people are left alone rather than pruned."""
+    with dbmod.connect() as db:
+        db.execute("DROP TABLE people")
+        db.commit()
+    add_sighting()
+    world.fake.person_ids = [3]
+    counts = world.bridge.sync_once()
+    assert counts["sightings"] == 1 and counts["people"] == 0
+    assert world.fake.reducer_calls("delete_person") == []

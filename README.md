@@ -51,6 +51,22 @@ Models can be changed with `RECALL_VISION_MODEL` / `RECALL_AGENT_MODEL`.
    Open http://localhost:5173. It mirrors the annotated webcam from `webcam.py`,
    shows where each belonging was last seen, and lets you save people
    (description, relationship, and how long you have known them).
+   The **Add** button enrolls a new belonging from the camera: hold it still and
+   turn it until 5 angles are saved. Until then its `info.json` has
+   `"tracking": false` and the matcher ignores it.
+6. **Live dashboard** (optional, SpacetimeDB): see below. It runs on :5174 (or
+   :8000/app), so it can be open next to the one above.
+
+## Two dashboards
+| | `RecallAIFrontEnd/` | `web/` |
+|---|---|---|
+| Stack | React (JSX), polls FastAPI | React + TS, live SpacetimeDB subscription |
+| Shows | live camera feed, enrollment (**Add**), last locations, people editor | belongings (with "Enrolling…" badge), sighting history, alerts (dismiss), people, Grok chat |
+| Dev URL | http://localhost:5173 | http://localhost:5174 (built: http://localhost:8000/app/) |
+| Needs | `uvicorn` on :8000 | `uvicorn` on :8000 + `spacetime start` |
+
+Both Vite dev servers proxy `/api` and `/snapshots` to :8000, and FastAPI allows both
+origins via CORS.
 
 ## How it decides
 | Event | When |
@@ -68,9 +84,9 @@ YOLO confuses some classes (a gaming mouse up close came out as
 classes. See `CONFUSABLE_GROUPS` in `recognition.py`.
 
 ## Live dashboard (SpacetimeDB)
-SQLite stays the main store; `spacetime_bridge.py` mirrors belongings, sightings
-and alerts into a SpacetimeDB database (`recallai`) so the React dashboard in
-`web/` updates live. Dismissing an alert in the dashboard is copied back to SQLite.
+SQLite stays the main store; `spacetime_bridge.py` mirrors belongings (incl.
+whether they are still enrolling), sightings, alerts and people into a SpacetimeDB
+database (`recallai`) so the React dashboard in `web/` updates live. Dismissing an alert in the dashboard is copied back to SQLite.
 **First time (Windows PowerShell):**
 ```
 iwr https://windows.spacetimedb.com -useb | iex      # install SpacetimeDB, then open a new terminal
@@ -83,13 +99,16 @@ spacetime start                                        # 1. database (port 3000)
 cd spacetime; spacetime publish --server local recallai   # 2. once per module change
 uvicorn server:app --host 0.0.0.0 --port 8000          # 3. API + bridge ("Dashboard sync: ...")
 python webcam.py                                       # 4. camera
-cd web; npm run dev                                    # dashboard: http://localhost:5173
+cd web; npm run dev                                    # dashboard: http://localhost:5174
 ```
 Or `cd web; npm run build` once and use http://localhost:8000/app (no Vite needed).
-From a phone on the same Wi-Fi: http://<laptop-ip>:5173 (or :8000/app); the page
+From a phone on the same Wi-Fi: http://<laptop-ip>:5174 (or :8000/app); the page
 connects to SpacetimeDB on the same laptop automatically.
 Reset everything: delete `memory.db`, then `spacetime publish --server local --delete-data=always recallai`
 (the bridge re-registers and resyncs by itself). One-off sync: `python spacetime_bridge.py --once`.
+Upgrading from the first dashboard version: a plain `spacetime publish --server local recallai`
+adds the new `tracking` column and `person` table in place (no data loss); then
+`npm run build` in `web/` again. Contract: `SPACETIME_CONTRACT.md`.
 
 Settings (env or `.env`): `SPACETIME_URL` (default `http://localhost:3000`),
 `SPACETIME_DB` (default `recallai`), `SPACETIME_SYNC=0` to turn the bridge off.
@@ -98,11 +117,15 @@ by someone else, republish with `--delete-data` (or delete that file and republi
 
 ## Files
 - `spacetime_bridge.py`: SQLite → SpacetimeDB mirror for the live dashboard
+- `spacetime/`: SpacetimeDB module (tables + reducers); `web/`: live dashboard
+- `RecallAIFrontEnd/`: camera / enrollment / people dashboard
+- `people.py`: people memory (`/api/people`); `enroll.py`: camera enrollment (5 angles);
+  `live_feed.py`: pushes the annotated webcam frame to the server
 - `webcam.py`: camera loop (YOLO, then recognition, then recorder)
 - `recognition.py`: "is it mine?" matcher (DINOv2 / CLIP / colour-histogram fallback)
 - `recorder.py`: decides what to save and when
 - `register.py`: register belongings and their reference photos
-- `db.py`: database schema; upgrades the old `memory.db` in place
+- `db.py`: database schema (sightings, alerts, people); upgrades an older `memory.db` in place
 - `llm.py`, `interpreter.py`, `agent.py`, `watcher.py`: Grok features
 - `temporal_memory.py`: all time/duration math (last seen, at-time recall, inventory)
 - `server.py`, `search.py`, `search.html`, `gps.html`: web app
@@ -111,4 +134,7 @@ by someone else, republish with `--delete-data` (or delete that file and republi
 ```
 pytest -m "not slow"   # fast tests (Grok is mocked), no downloads
 pytest                 # everything, incl. real-frame YOLO + DINOv2 tests
+cd spacetime; npx tsc --noEmit -p .; npx vitest run   # module
+cd web; npm run build; npx vitest run                 # live dashboard
+cd RecallAIFrontEnd; npm run build; npm run lint      # JSX dashboard
 ```
