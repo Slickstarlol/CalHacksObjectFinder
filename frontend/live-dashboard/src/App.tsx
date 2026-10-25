@@ -9,7 +9,8 @@ import { useLiveCamera } from './hooks/useLiveCamera';
 import { useNow } from './hooks/useNow';
 import { classifyUpdate, pushActivity, type ActivityItem } from './lib/activity';
 import { isVisible } from './lib/sightings';
-import { renamePerson } from './lib/people';
+import { labelPerson, renamePerson } from './lib/people';
+import type { Box } from './lib/live';
 import { ownedBy, ownerKey, type AuthUser } from './lib/auth';
 import { API_BASE } from './config';
 
@@ -93,6 +94,10 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
   const now = useNow(30_000);
   const ask = useAsk(API_BASE, authFetch);
   const camera = useLiveCamera(API_BASE, authFetch);
+  const onLabelPerson = useCallback(
+    (bbox: Box, name: string, personId?: number) => labelPerson({ bbox, name, personId }, API_BASE, authFetch),
+    [authFetch]
+  );
   const onRenamePerson = useCallback(
     (person: Person, name: string) => renamePerson(person, name, API_BASE, authFetch),
     [authFetch]
@@ -115,6 +120,7 @@ export default function App({ user, authFetch, onSignOut }: AppProps) {
       ask={{ entries: ask.entries, pending: ask.pending, onAsk: ask.ask, onClear: ask.clear }}
       camera={camera}
       onRenamePerson={onRenamePerson}
+      onLabelPerson={onLabelPerson}
       account={{ name: user.display_name || user.username, username: user.username, onSignOut }}
     />
   );

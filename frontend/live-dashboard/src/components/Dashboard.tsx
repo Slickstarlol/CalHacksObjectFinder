@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCursorLens } from '../hooks/useCursorLens';
 import type { Alert, Belonging, Person, Sighting } from '../module_bindings/types';
 import type { ActivityItem } from '../lib/activity';
-import type { CameraState } from '../lib/live';
+import type { Box, CameraState } from '../lib/live';
+import type { LabelResult } from '../lib/people';
 import {
   activeAlerts,
   indexById,
@@ -50,6 +51,8 @@ export type DashboardProps = {
   leftAfter?: number;
   /** Saves a person's new name (double-click a name in People). Omitted -> read-only. */
   onRenamePerson?: (person: Person, name: string) => Promise<void>;
+  /** Names the person in a live-feed box (double-click it). Omitted -> people boxes are read-only. */
+  onLabelPerson?: (bbox: Box, name: string, personId?: number) => Promise<LabelResult>;
   initialSelectedId?: string | null;
   /** The signed-in account shown in the top bar, with its sign-out action. */
   account?: { name: string; username: string; onSignOut: () => void };
@@ -180,7 +183,15 @@ export function Dashboard(props: DashboardProps) {
             onOpenImage={openImage}
           />
 
-          <LiveFeed camera={props.camera} missing={missing} now={now} onSelect={setSelectedId} />
+          <LiveFeed
+            camera={props.camera}
+            missing={missing}
+            now={now}
+            onSelect={setSelectedId}
+            people={props.people}
+            onRenamePerson={props.onRenamePerson}
+            onLabelPerson={props.onLabelPerson}
+          />
 
           <section aria-labelledby="belongings-title">
             <header className="section-head">

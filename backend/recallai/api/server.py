@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from recallai import owners, paths
 from recallai.memory import db as dbmod
 from recallai.ai.agent import RecallAgent, MemoryTools
+from recallai.memory.people import find_or_create, get_person, names_by_id
 from recallai.memory.people import router as people_router
 from recallai.api import search
 from recallai.api.auth import current_user, media_user, require_device
@@ -35,7 +36,8 @@ from recallai.api.search import router as search_router
 from recallai.vision.enroll import ANGLES
 from recallai.sync.spacetime_bridge import SpacetimeBridge
 from recallai.ai.watcher import Watcher
-from recallai.vision.recognition import load_belongings, set_owner
+from recallai.vision.people_id import PERSON, SNAP_IOU
+from recallai.vision.recognition import box_iou, load_belongings, set_owner
 
 SNAPSHOT_DIR = paths.SNAPSHOT_DIR   # data/snapshots, served (per owner) at /snapshots
 WEB_DIST = paths.WEB_DIST           # frontend/live-dashboard/dist (npm run build)
@@ -154,7 +156,8 @@ LIVE_STALE_SECONDS = 2.5
 _live_lock = threading.Lock()
 _live = {
     "jpeg": None,
-    "meta": {"gps": False, "width": None, "height": None, "in_view": [], "detections": []},
+    "meta": {"gps": False, "width": None, "height": None, "in_view": [], "people": [],
+             "detections": []},
     "updated_at": 0.0,
 }
 
@@ -165,6 +168,7 @@ class LiveUpdate(BaseModel):
     width: int | None = None
     height: int | None = None
     in_view: list[dict] = Field(default_factory=list)
+    people: list[dict] = Field(default_factory=list)
     detections: list[dict] = Field(default_factory=list)
     enroll: dict | None = None
 
@@ -180,6 +184,7 @@ def _live_view():
             "width": _live["meta"].get("width"),
             "height": _live["meta"].get("height"),
             "in_view": list(_live["meta"].get("in_view") or []),
+            "people": list(_live["meta"].get("people") or []),
             "detections": list(_live["meta"].get("detections") or []),
         }
     return {
@@ -209,6 +214,7 @@ def push_live(body: LiveUpdate, _device=Depends(require_device)):
         "width": body.width,
         "height": body.height,
         "in_view": body.in_view[:32],
+        "people": body.people[:32],
         "detections": body.detections[:40],
     }
     with _live_lock:
@@ -219,7 +225,28 @@ def push_live(body: LiveUpdate, _device=Depends(require_device)):
     if body.enroll:
         _apply_enroll(body.enroll)
     # The device sees owner_id: it writes it into the new belonging's info.json.
-    return {"status": "ok", "enroll": enroll_view()}
+    return {"status": "ok", "enroll": enroll_view(), "people_jobs": take_people_jobs()}
+
+
+# People named on the live feed. The dashboard sends the box a user
+# double-clicked; the camera gets the job with its next POST /api/live,
+# saves a photo of that person (data/people/<id>/) and names them from then on.
+MAX_PEOPLE_JOBS = 8
+_people_jobs_lock = threading.Lock()
+_people_jobs = []
+
+
+def take_people_jobs():
+    with _people_jobs_lock:
+        jobs = list(_people_jobs)
+        _people_jobs.clear()
+    return jobs
+
+
+class LabelPerson(BaseModel):
+    bbox: list[float] = Field(min_length=4, max_length=4)
+    name: str | None = Field(default=None, max_length=80)
+    person_id: int | None = None
 
 
 # Camera enrollment. webcam.py does the seeing; this is the prompt the
@@ -334,7 +361,42 @@ def live_status(user=Depends(current_user)):
     mine = my_belonging_ids(user["id"])
     snap["in_view"] = [i for i in snap["in_view"]
                        if isinstance(i, dict) and i.get("belonging_id") in mine]
+    # Only the caller's people, with today's name (a rename shows at once).
+    names = names_by_id(user["id"])
+    snap["people"] = [{**p, "name": names[p["person_id"]]} for p in snap["people"]
+                      if isinstance(p, dict) and p.get("person_id") in names]
     return snap
+
+
+@app.post("/api/live/people")
+def label_live_person(body: LabelPerson, user=Depends(current_user)):
+    """Name the person in a box on the live feed (double-click in the
+    dashboard). `person_id` picks one of your people; otherwise `name` finds
+    your person with that name or creates them. The box is matched to a
+    person the camera sees right now, and the camera learns their look."""
+    snap = _live_view()
+    if not snap["online"]:
+        raise HTTPException(409, "The camera is off.")
+    boxes = [d["bbox"] for d in snap["detections"]
+             if isinstance(d, dict) and d.get("category") == PERSON
+             and isinstance(d.get("bbox"), list) and len(d["bbox"]) == 4]
+    best = max(boxes, key=lambda b: box_iou(body.bbox, b), default=None)
+    if best is None or box_iou(body.bbox, best) < SNAP_IOU:
+        raise HTTPException(409, "That person isn't in view any more.")
+    if body.person_id is not None:
+        person, created = get_person(body.person_id, user["id"]), False
+        if person is None:
+            raise HTTPException(404, "No such person")
+    else:
+        name = (body.name or "").strip()
+        if not name:
+            raise HTTPException(422, "Name is required")
+        person, created = find_or_create(name, user["id"])
+    with _people_jobs_lock:
+        _people_jobs.append({"person_id": person["id"], "bbox": best,
+                             "width": snap["width"]})
+        del _people_jobs[:-MAX_PEOPLE_JOBS]
+    return {"person": person, "created": created, "bbox": best}
 
 
 @app.get("/api/device/gps")

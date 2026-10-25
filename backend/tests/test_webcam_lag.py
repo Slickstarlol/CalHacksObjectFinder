@@ -65,6 +65,7 @@ def test_video_never_freezes_while_recognition_runs(monkeypatch):
     matcher = SimpleNamespace(belongings=[SimpleNamespace(name="My Mouse", category="mouse")],
                               embedder=SimpleNamespace(name="fake"), threshold=0.7)
     monkeypatch.setattr(webcam, "BelongingMatcher", lambda *a, **k: matcher)
+    monkeypatch.setattr(webcam, "PeopleMatcher", lambda *a, **k: None)
     monkeypatch.setattr(webcam, "load_embedder", lambda *a: None)
     monkeypatch.setattr(webcam, "YOLO", FakeYOLO)
     monkeypatch.setattr(webcam, "SightingRecorder", SlowRecorder)

@@ -9,6 +9,8 @@ data/memory.db-wal
 data/memory.db-shm
 data/snapshots/
 data/belongings/*/embeddings_*.npz
+# photos of people named on the live feed stay on this machine
+data/people/
 # old flat layout, until scripts/migrate_layout.py has moved it into data/
 /memory.db
 /memory.db-wal

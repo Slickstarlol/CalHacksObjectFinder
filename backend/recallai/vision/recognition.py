@@ -272,6 +272,15 @@ def crop_box(frame, xyxy, pad=0.08):
     return frame[y1:y2, x1:x2]
 
 
+def box_iou(a, b):
+    """Overlap of two (x1, y1, x2, y2) boxes: intersection over union, 0..1."""
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
 # ---------------------------------------------------------------------------
 # Matcher
 # ---------------------------------------------------------------------------

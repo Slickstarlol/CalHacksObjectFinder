@@ -23,7 +23,9 @@ from recallai.vision.enroll import AngleCapture, save_angle_default
 from recallai.ai.interpreter import Interpreter
 from recallai.vision.live_feed import (LIVE_URL, PUBLISH_EVERY, SERVER_URL, LivePublisher,
                                       device_headers)
-from recallai.vision.recognition import BelongingMatcher, crop_box, load_embedder
+from recallai.vision.people_id import PERSON, PeopleMatcher, teach as teach_person
+from recallai.vision.recognition import (BelongingMatcher, box_iou as _iou, crop_box,
+                                         load_embedder)
 from recallai.vision.recorder import Detection, SightingRecorder
 
 # ---------------------------------
@@ -36,6 +38,7 @@ GONE_AFTER = 5          # seconds out of view before 'left_view' is saved
 RECOGNIZE_EVERY = 0.5   # seconds between recognition passes (CLIP is slower than YOLO)
 MAX_GPS_AGE = 30
 DETECT_CONF = 0.35
+PEOPLE_REFRESH = 3.0    # seconds between re-reading people's names and photos
 
 
 def _fresh(fix):
@@ -93,10 +96,15 @@ class RecognitionWorker:
     The video loop hands over its latest frame; if the worker is still busy
     with the previous one, the older pending frame is simply replaced, so the
     video never waits and the worker always works on the freshest frame.
+
+    With a PeopleMatcher it also names the person boxes it recognizes.
     """
 
-    def __init__(self, make_recorder):
+    def __init__(self, make_recorder, people=None):
         self._make_recorder = make_recorder
+        self.people = people
+        self.people_found = []   # [(PersonMatch, Detection)], last pass
+        self._people_loaded = None
         self._cond = threading.Condition()
         self._pending = None
         self._busy = False
@@ -117,6 +125,17 @@ class RecognitionWorker:
         with self._cond:
             self._reload = True
             self._cond.notify()
+
+    def request_people_reload(self):
+        """A person was just named; use their new photo from the next frame."""
+        self._people_loaded = None
+
+    def _match_people(self, frame, detections):
+        now = time.monotonic()
+        if self._people_loaded is None or now - self._people_loaded >= PEOPLE_REFRESH:
+            self._people_loaded = now
+            self.people.reload()
+        return self.people.match(frame, detections)
 
     @property
     def idle(self):
@@ -143,6 +162,8 @@ class RecognitionWorker:
                             b.name for b in recorder.matcher.belongings) or "(nothing)")
                     if job is not None:
                         self.found = recorder.process(*job)
+                        if self.people is not None:
+                            self.people_found = self._match_people(job[0], job[1])
                 except Exception as e:  # keep the camera running
                     self.error = e
                     print(f"[recognition] error: {e}")
@@ -160,14 +181,6 @@ class RecognitionWorker:
         self._thread.join(timeout)
 
 
-def _iou(a, b):
-    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
-    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
-    inter = ix * iy
-    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
-    return inter / union if union > 0 else 0.0
-
-
 def live_box(old_xyxy, detections):
     """Move a label onto the current frame's detection that overlaps it most,
     so the green box follows the object between recognition passes."""
@@ -175,6 +188,38 @@ def live_box(old_xyxy, detections):
     if best is not None and _iou(old_xyxy, best.xyxy) > 0.3:
         return best.xyxy
     return old_xyxy
+
+
+# Box colours (BGR) for YOLO categories; a category keeps its colour.
+PALETTE = [(56, 56, 255), (151, 157, 255), (31, 112, 255), (29, 178, 255),
+           (49, 210, 207), (10, 249, 72), (23, 204, 146), (134, 219, 61),
+           (211, 188, 0), (209, 117, 0), (255, 149, 0), (255, 56, 132)]
+PERSON_COLOR = (255, 170, 60)
+
+
+def _color(category):
+    if category == PERSON:
+        return PERSON_COLOR
+    return PALETTE[sum(category.encode()) % len(PALETTE)]
+
+
+def draw_detections(display, detections, skip=()):
+    """YOLO boxes labelled "laptop 91%" (results.plot() printed 0.91).
+    Boxes overlapping one in `skip` (your recognized belongings, drawn
+    separately in green) are left out so labels don't pile up."""
+    font, scale = cv2.FONT_HERSHEY_SIMPLEX, 0.5
+    for d in detections:
+        if any(_iou(d.xyxy, s) > 0.5 for s in skip):
+            continue
+        color = _color(d.category)
+        x1, y1, x2, y2 = (int(v) for v in d.xyxy)
+        cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
+        label = f"{d.category} {d.confidence:.0%}"
+        (tw, th), _ = cv2.getTextSize(label, font, scale, 1)
+        top = y1 - th - 8 if y1 >= th + 8 else y1      # above the box, or just inside
+        cv2.rectangle(display, (x1, top), (x1 + tw + 8, top + th + 8), color, -1)
+        cv2.putText(display, label, (x1 + 4, top + th + 3), font, scale,
+                    (255, 255, 255), 1, cv2.LINE_AA)
 
 
 def _paint_enroll(display, message):
@@ -201,6 +246,9 @@ def main():
                              "if strangers' items get labelled as yours.")
     parser.add_argument("--embedder", default="dinov2",
                         choices=["dinov2", "clip", "histogram"])
+    parser.add_argument("--person-threshold", type=float, default=None,
+                        help="how sure it must be to name a person (DINOv2 "
+                             "default 0.75). Raise it if strangers get names.")
     args = parser.parse_args()
 
     matcher = BelongingMatcher(load_embedder(args.embedder),
@@ -217,9 +265,10 @@ def main():
     interpreter = Interpreter()
     print("Grok interpretation:",
           "ON" if interpreter.enabled else "off (set XAI_API_KEY to enable)")
+    people = PeopleMatcher(matcher.embedder, threshold=args.person_threshold)
     worker = RecognitionWorker(lambda: SightingRecorder(
         matcher, save_interval=SAVE_INTERVAL, gone_after=GONE_AFTER,
-        on_saved=interpreter.submit))
+        on_saved=interpreter.submit), people=people)
     gps = BackgroundGPS()
 
     camera = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW)
@@ -245,8 +294,25 @@ def main():
 
             results = model(frame, conf=DETECT_CONF, verbose=False)[0]
             detections = to_detections(results, model.names)
-            display = results.plot()
+            mine = [(m, live_box(det.xyxy, detections))
+                    for m, det in list(worker.found.values())]
+            display = frame.copy()
+            draw_detections(display, detections, skip=[box for _, box in mine])
             now = time.monotonic()
+
+            # People named on the dashboard since the last frame: save a
+            # photo of each so the worker recognizes them from now on.
+            for job in publisher.take_people_jobs():
+                try:
+                    saved = teach_person(frame, detections, job)
+                except Exception as e:  # keep the camera running
+                    print(f"[people] could not save a photo ({e})")
+                    continue
+                if saved is None:
+                    print("[people] nobody is at that spot any more; skipped")
+                else:
+                    worker.request_people_reload()
+                    print(f"[people] saved a photo of person {job.get('person_id')}")
 
             remote = publisher.remote_enroll or {}
             if remote.get("active"):
@@ -291,8 +357,7 @@ def main():
                 last_recognize = now
 
             # Highlight your belongings in green with their name
-            for m, det in list(worker.found.values()):
-                x1, y1, x2, y2 = live_box(det.xyxy, detections)
+            for m, (x1, y1, x2, y2) in mine:
                 p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
                 cv2.rectangle(display, p1, p2, (0, 255, 0), 3)
                 cv2.putText(display, f"{m.name} {m.score:.0%}",
@@ -312,19 +377,26 @@ def main():
             cv2.imshow("RecallAI - Visual Memory", display)
 
             if now - last_publish >= PUBLISH_EVERY:
-                in_view = []
-                for m, det in list(worker.found.values()):
-                    x1, y1, x2, y2 = live_box(det.xyxy, detections)
-                    in_view.append({
-                        "belonging_id": m.belonging_id,
-                        "name": m.name,
-                        "category": m.category,
-                        "score": round(m.score, 3),
-                        "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                    })
+                in_view = [{
+                    "belonging_id": m.belonging_id,
+                    "name": m.name,
+                    "category": m.category,
+                    "score": round(m.score, 3),
+                    "bbox": [int(v) for v in box],
+                } for m, box in mine]
+                # Names stay off the shared frame: the server shows each
+                # account only its own people.
+                persons = [d for d in detections if d.category == PERSON]
+                named = [{
+                    "person_id": pm.person_id,
+                    "name": pm.name,
+                    "score": round(pm.score, 3),
+                    "bbox": [int(v) for v in live_box(det.xyxy, persons)],
+                } for pm, det in list(worker.people_found)]
                 publisher.submit(display, {
                     "gps": gps_ok,
                     "in_view": in_view,
+                    "people": named,
                     "detections": [
                         {
                             "category": d.category,

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { accuracyTone, boxPercent, feedAccuracy, otherDetections, parseLive, percent } from './live';
+import {
+  accuracyTone,
+  boxPercent,
+  feedAccuracy,
+  otherDetections,
+  parseLive,
+  percent,
+  unnamedPeople,
+  type LiveDetection,
+} from './live';
 
 describe('parseLive', () => {
   it('maps the /api/live body to camelCase and keeps only valid boxes', () => {
@@ -14,6 +23,10 @@ describe('parseLive', () => {
         { belonging_id: 'def', name: '', score: '0.7', bbox: [5, 5, 1, 1] },
         'junk',
       ],
+      people: [
+        { person_id: 4, name: 'Maya', score: 0.81, bbox: [10, 20, 60, 200] },
+        { person_id: 'x', name: 'No id', score: 0.9, bbox: [0, 0, 5, 5] },
+      ],
       detections: [{ category: 'person', confidence: 0.9, bbox: [1, 2, 3] }],
     });
     expect(snap).toEqual({
@@ -26,6 +39,7 @@ describe('parseLive', () => {
         { belongingId: 'abc', name: 'My Bag', category: 'backpack', score: 0.86, bbox: [0, 10, 100, 200] },
         { belongingId: 'def', name: 'Belonging', category: '', score: 0.7, bbox: null },
       ],
+      people: [{ personId: 4, name: 'Maya', score: 0.81, bbox: [10, 20, 60, 200] }],
       detections: [{ category: 'person', confidence: 0.9, bbox: null }],
     });
   });
@@ -91,5 +105,26 @@ describe('scores', () => {
     expect(accuracyTone(90)).toBe('good');
     expect(accuracyTone(75)).toBe('fair');
     expect(accuracyTone(40)).toBe('poor');
+  });
+});
+
+describe('people on the feed', () => {
+  const dets: LiveDetection[] = [
+    { category: 'person', confidence: 0.9, bbox: [10, 20, 60, 200] },
+    { category: 'person', confidence: 0.7, bbox: [300, 20, 360, 200] },
+    { category: 'chair', confidence: 0.6, bbox: [100, 100, 200, 200] },
+  ];
+  const maya = { personId: 4, name: 'Maya', score: 0.8, bbox: [12, 22, 60, 198] as [number, number, number, number] };
+
+  it('finds the person boxes without a name', () => {
+    expect(unnamedPeople(dets, [maya])).toEqual([dets[1]]);
+    expect(unnamedPeople(dets, [])).toEqual([dets[0], dets[1]]);
+  });
+
+  it('leaves named people out of the anonymous groups', () => {
+    expect(otherDetections(dets, [], [maya])).toEqual([
+      { category: 'person', count: 1, confidence: 0.7 },
+      { category: 'chair', count: 1, confidence: 0.6 },
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Dev-only demo (http://localhost:5174/demo.html): renders the presentational
  * Dashboard with fixture data, no SpacetimeDB or FastAPI needed.
- * Query params: ?theme=dark|light  ?drawer=<belongingId>  ?simulate=1  ?empty=1  ?camera=off
+ * Query params: ?theme=dark|light  ?drawer=<belongingId>  ?simulate=1  ?empty=1  ?camera=off  ?label=fail
  */
 import { StrictMode, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -10,6 +10,7 @@ import type { AskEntry } from '../components/types';
 import { pushActivity, type ActivityItem } from '../lib/activity';
 import { useNow } from '../hooks/useNow';
 import { parseLive, type CameraState } from '../lib/live';
+import { applyStoredTheme } from '../lib/theme';
 import type { Sighting } from '../module_bindings/types';
 import {
   askEntries,
@@ -26,18 +27,21 @@ import {
 import '../styles.css';
 
 const params = new URLSearchParams(location.search);
-const camera: CameraState =
+const initialCamera: CameraState =
   params.get('camera') === 'off'
     ? { ...parseLive({ online: false }), status: 'offline', frameUrl: '' }
     : { ...parseLive(demoLive), status: 'online', frameUrl: '/demo/1792851254577_laptop.jpg' };
+const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 const theme = params.get('theme');
 if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+else applyStoredTheme();
 
 function Demo() {
   const start = useMemo(() => Date.now(), []);
   const [sightings, setSightings] = useState<Sighting[]>(() => makeSightings(start));
   const [alerts, setAlerts] = useState(() => makeAlerts(start));
   const [people, setPeople] = useState(() => makePeople(start));
+  const [camera, setCamera] = useState(initialCamera);
   const [activity, setActivity] = useState<ActivityItem[]>(() => makeActivity(start, sightings));
   const [entries, setEntries] = useState<AskEntry[]>(askEntries);
   const now = useNow(30_000);
@@ -72,8 +76,37 @@ function Demo() {
       people={empty ? [] : people}
       onRenamePerson={async (person, name) => {
         // Stand-in for PUT /api/people/{id} + the bridge echoing the row back.
-        await new Promise(r => setTimeout(r, 600));
+        await wait(600);
         setPeople(prev => prev.map(p => (p.id === person.id ? { ...p, name } : p)));
+        setCamera(prev => ({
+          ...prev,
+          people: prev.people.map(p => (p.personId === Number(person.id) ? { ...p, name } : p)),
+        }));
+      }}
+      onLabelPerson={async (bbox, name, personId) => {
+        // Stand-in for POST /api/live/people, then the camera recognizing them.
+        await wait(400);
+        if (params.get('label') === 'fail') throw new Error('That person isn’t in view any more.');
+        let person =
+          personId !== undefined
+            ? people.find(p => Number(p.id) === personId)
+            : people.find(p => p.name.toLowerCase() === name.toLowerCase());
+        const created = !person;
+        if (!person) {
+          const t = micros(Date.now());
+          person = { id: BigInt(Date.now()), name, description: '', relationship: '', knownSince: '', createdAtMicros: t, updatedAtMicros: t, owner: '1' };
+          const added = person;
+          setPeople(prev => [...prev, added]);
+        }
+        const id = Number(person.id);
+        const shown = person.name;
+        setTimeout(() => {
+          setCamera(prev => ({
+            ...prev,
+            people: [...prev.people.filter(p => p.personId !== id), { personId: id, name: shown, score: 0.79, bbox }],
+          }));
+        }, 1800);
+        return { personId: id, name: shown, created, bbox };
       }}
       sightings={empty ? [] : sightings}
       alerts={empty ? [] : alerts}

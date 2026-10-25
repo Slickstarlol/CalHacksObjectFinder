@@ -1,7 +1,9 @@
 """Push the annotated camera frame to the RecallAI server.
 
 webcam.py draws boxes, then hands the frame here. A background thread posts
-the latest JPEG to POST /api/live so the React dashboard can show it.
+the latest JPEG to POST /api/live so the React dashboard can show it. The
+reply carries the enrollment switch and any people a dashboard user just
+named (take_people_jobs()).
 
 POST /api/live is device-only. On the same machine nothing is needed (the
 server trusts loopback requests without a browser Origin). For a camera on
@@ -62,6 +64,7 @@ class LivePublisher:
         self._pending = None
         self._stop = threading.Event()
         self.remote_enroll = None
+        self._people_jobs = []
         self._thread = threading.Thread(
             target=self._loop, name="recall-live", daemon=True)
         self._thread.start()
@@ -78,6 +81,7 @@ class LivePublisher:
                 "width": int(preview.shape[1]),
                 "height": int(preview.shape[0]),
                 "in_view": [scale_track(i, scale) for i in meta.get("in_view", [])],
+                "people": [scale_track(i, scale) for i in meta.get("people", [])],
                 "detections": [scale_track(i, scale) for i in meta.get("detections", [])],
             }
             if enroll is not None:
@@ -86,6 +90,13 @@ class LivePublisher:
                 self._pending = (buf.tobytes(), payload)
         except Exception as e:
             print(f"[live] could not encode frame ({e})")
+
+    def take_people_jobs(self):
+        """People named on the dashboard since the last call. Each job's
+        bbox is in preview pixels, with the preview's width alongside."""
+        with self._lock:
+            jobs, self._people_jobs = self._people_jobs, []
+        return jobs
 
     def close(self):
         self._stop.set()
@@ -116,3 +127,7 @@ class LivePublisher:
                 data = None
             if isinstance(data, dict) and "enroll" in data:
                 self.remote_enroll = data["enroll"]
+            jobs = data.get("people_jobs") if isinstance(data, dict) else None
+            if isinstance(jobs, list):
+                with self._lock:
+                    self._people_jobs += [j for j in jobs if isinstance(j, dict)]

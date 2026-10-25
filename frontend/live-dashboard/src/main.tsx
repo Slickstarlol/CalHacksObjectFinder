@@ -4,7 +4,10 @@ import type { Identity } from 'spacetimedb';
 import { DbConnection, type ErrorContext } from './module_bindings';
 import { SPACETIMEDB_DB_NAME, SPACETIMEDB_HOST } from './config';
 import Root from './Root';
+import { applyStoredTheme } from './lib/theme';
 import './styles.css';
+
+applyStoredTheme();
 
 const TOKEN_KEY = `${SPACETIMEDB_HOST}/${SPACETIMEDB_DB_NAME}/auth_token`;
 const RETRIED_KEY = `${TOKEN_KEY}/reset_once`;
