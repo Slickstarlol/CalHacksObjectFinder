@@ -122,7 +122,7 @@ def test_default_layout_points_into_the_repo():
     assert paths.DB_PATH == REPO / "data" / "memory.db"
     assert paths.SNAPSHOT_DIR == REPO / "data" / "snapshots"
     assert paths.BELONGINGS_DIR == REPO / "data" / "belongings"
-    assert paths.YOLO_PATH == REPO / "models" / "yolo11n.pt"
+    assert paths.YOLO_PATH == REPO / "models" / "yolo26n.pt"
     assert paths.YOLO_PATH.is_file()
     assert (paths.STATIC_DIR / "search.html").is_file()
     assert (paths.STATIC_DIR / "gps.html").is_file()

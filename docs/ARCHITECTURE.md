@@ -2,7 +2,7 @@
 
 ```
  webcam ──▶ recallai.vision.webcam ──────────────────────────────┐
-            YOLO (models/yolo11n.pt)                              │ annotated frame
+            YOLO (models/yolo26n.pt)                              │ annotated frame
             → recognition: "is it mine?" (DINOv2 vs data/belongings/)   (live_feed → POST /api/live)
             → recorder: seen / left_view                          │
                  │                                                ▼

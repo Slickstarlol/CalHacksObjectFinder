@@ -4,7 +4,7 @@ Layout (relative to the repository root):
     data/memory.db          SQLite (git-ignored)
     data/snapshots/         camera frames + crops (git-ignored)
     data/belongings/        your registered items and reference photos
-    models/yolo11n.pt       YOLO weights
+    models/yolo26n.pt       YOLO weights
     .env, .spacetime_token  secrets, stay at the repository root
 
 The sightings table stores image paths relative to DATA_DIR
@@ -37,7 +37,7 @@ SNAPSHOT_DIR = DATA_DIR / "snapshots"      # must match the stored "snapshots/..
 BELONGINGS_DIR = _env_path("RECALLAI_BELONGINGS_DIR", DATA_DIR / "belongings")
 
 MODELS_DIR = _env_path("RECALLAI_MODELS_DIR", ROOT / "models")
-YOLO_PATH = _env_path("RECALLAI_YOLO_PATH", MODELS_DIR / "yolo11n.pt")
+YOLO_PATH = _env_path("RECALLAI_YOLO_PATH", MODELS_DIR / "yolo26n.pt")
 
 STATIC_DIR = _env_path("RECALLAI_STATIC_DIR", PACKAGE_DIR / "api" / "static")
 WEB_DIST = _env_path("RECALLAI_WEB_DIST", ROOT / "frontend" / "live-dashboard" / "dist")

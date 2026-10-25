@@ -22,7 +22,7 @@ frontend/
   live-dashboard/ live SpacetimeDB dashboard (React + TS, :5174, built into :8000/app/)
 spacetimedb/      SpacetimeDB module (tables + reducers)
 data/             belongings/ (committed photos); memory.db and snapshots/ (git-ignored)
-models/           yolo11n.pt
+models/           yolo26n.pt
 docs/             ARCHITECTURE.md, WORKFLOW.md, SPACETIME_CONTRACT.md, AUTH.md
 scripts/          dev.ps1 / dev.sh helpers, migrate_layout.py
 launcher/         RecallAI.bat control panel: start/stop each step (see launcher/README.md)
