@@ -326,6 +326,7 @@ a {
   position: relative;
   isolation: isolate;
   min-height: 100vh;
+  min-height: 100dvh; /* phones: the height left by the browser's toolbars */
   background-color: var(--page);
   background-image: repeating-linear-gradient(0deg, var(--grid-major) 0 1.5px, transparent 1.5px 40px),
     repeating-linear-gradient(90deg, var(--grid-major) 0 1.5px, transparent 1.5px 40px),
@@ -1679,6 +1680,8 @@ button.event-row:hover {
 }
 @media (hover: none) {
   .rename-btn {
+    width: 32px;
+    height: 32px;
     opacity: 1;
   }
 }
@@ -2502,22 +2505,26 @@ button.person-tile:hover {
   z-index: 30;
   display: grid;
   place-items: center;
+  overflow-y: auto;
   padding: 24px;
   background: rgb(4 18 28 / 82%);
   animation: fade 200ms var(--ease) both;
 }
+/* margin: auto centres it but, unlike place-items, never pushes the top out of reach. */
 .lightbox figure {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   max-width: min(1100px, 100%);
-  margin: 0;
+  margin: auto;
   animation: pop 360ms var(--spring) both;
 }
+/* Leaves room for the caption and Close, even on a phone held sideways. */
 .lightbox img {
   max-width: 100%;
   max-height: 78vh;
+  max-height: min(78dvh, calc(100dvh - 140px));
   border-radius: var(--radius-sm);
   box-shadow: 0 30px 60px -20px rgb(0 0 0 / 60%);
 }
@@ -2537,6 +2544,7 @@ button.person-tile:hover {
 .auth-page {
   display: grid;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px 16px;
   place-items: center;
   background: radial-gradient(1200px 500px at 50% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
@@ -2805,6 +2813,45 @@ button.person-tile:hover {
   }
   .alert {
     flex-wrap: wrap;
+  }
+}
+/* Phones: one-row top bar, and alerts keep the full width for their message. */
+@media (max-width: 560px) {
+  .topbar-inner {
+    gap: 8px;
+  }
+  .brand h1 {
+    font-size: 22px;
+  }
+  .status {
+    padding: 6px 10px 6px 9px;
+  }
+  .status-age {
+    display: none;
+  }
+  .account .btn {
+    padding: 6px 10px;
+  }
+  .alert-body {
+    flex-basis: calc(100% - 80px);
+  }
+  .alert-dismiss {
+    margin-left: auto;
+  }
+}
+/* A phone held sideways is too short to keep the top bar pinned. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .topbar {
+    position: static;
+  }
+}
+/* iPhones zoom into any text box under 16px when it is tapped. */
+@media (pointer: coarse) {
+  .ask-form input,
+  .name-input,
+  .event-row-editing .name-input,
+  .auth-field input {
+    font-size: 16px;
   }
 }
 @media (max-width: 1080px) {

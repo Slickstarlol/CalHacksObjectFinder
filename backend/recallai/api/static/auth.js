@@ -69,10 +69,12 @@
   }
 
   // ---- the form -------------------------------------------------------
+  // The layer scrolls and the form centres with margin:auto, so a tall form on a
+  // short screen (a phone held sideways) never loses its top or its button.
   var css =
     "#ra-auth{position:fixed;inset:0;z-index:50;background:rgba(20,16,12,.55);display:flex;" +
-    "align-items:center;justify-content:center;padding:16px;font-family:system-ui,Arial,sans-serif}" +
-    "#ra-auth form{background:#fff;color:#222;border-radius:14px;padding:22px;width:100%;max-width:360px;" +
+    "overflow-y:auto;padding:16px;font-family:system-ui,Arial,sans-serif}" +
+    "#ra-auth form{margin:auto;background:#fff;color:#222;border-radius:14px;padding:22px;width:100%;max-width:360px;" +
     "text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.25)}" +
     "#ra-auth h2{margin:0 0 4px;font-size:22px}#ra-auth p{margin:0 0 12px;color:#555;font-size:14px}" +
     "#ra-auth label{display:block;font-size:14px;margin:10px 0 4px}" +
