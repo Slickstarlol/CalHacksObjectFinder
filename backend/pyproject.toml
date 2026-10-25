@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recallai"
+version = "0.1.0"
+description = "RecallAI: remembers where your belongings were last seen (CalHacks)."
+requires-python = ">=3.10"
+# Dependencies live in requirements.txt (install them with
+# `pip install -r backend/requirements.txt`); this file only makes the
+# `recallai` package importable from anywhere via `pip install -e backend`.
+
+[tool.setuptools.packages.find]
+include = ["recallai*"]
+
+[tool.setuptools.package-data]
+recallai = ["api/static/*.html"]

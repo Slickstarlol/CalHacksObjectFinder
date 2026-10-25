@@ -1,10 +1,20 @@
 __pycache__/
 *.pyc
-memory.db
-memory.db-wal
-memory.db-shm
-snapshots/
-belongings/*/embeddings_*.npz
+*.egg-info/
+build/
+
+# runtime data; data/belongings/ reference photos are committed
+data/memory.db
+data/memory.db-wal
+data/memory.db-shm
+data/snapshots/
+data/belongings/*/embeddings_*.npz
+# old flat layout, until scripts/migrate_layout.py has moved it into data/
+/memory.db
+/memory.db-wal
+/memory.db-shm
+/snapshots/
+/belongings/
 .pytest_cache/
 venv/
 .venv/
