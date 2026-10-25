@@ -4,10 +4,12 @@
 """
 
 from contextlib import asynccontextmanager
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,10 +18,12 @@ from pydantic import BaseModel, Field
 import db as dbmod
 from agent import RecallAgent, MemoryTools
 from search import router as search_router
+from spacetime_bridge import SpacetimeBridge
 from watcher import Watcher
 
 BASE_DIR = Path(__file__).resolve().parent
 SNAPSHOT_DIR = BASE_DIR / "snapshots"
+WEB_DIST = BASE_DIR / "web" / "dist"   # built React dashboard (npm run build)
 (SNAPSHOT_DIR / "crops").mkdir(parents=True, exist_ok=True)
 GPS_FRESH_SECONDS = 120
 WATCH_INTERVAL = 60
@@ -46,12 +50,29 @@ async def lifespan(app):
     Watcher(gps_provider=fresh_gps, interval=WATCH_INTERVAL).start()
     print("Grok agent:", "ON" if agent.enabled
           else "off (set XAI_API_KEY to enable)")
+    bridge = None
+    if os.environ.get("SPACETIME_SYNC", "1").strip() != "0":
+        bridge = SpacetimeBridge()
+        bridge.start()
+        print(f"Dashboard sync: mirroring to SpacetimeDB at {bridge.where}"
+              " (SPACETIME_SYNC=0 to disable)")
+    else:
+        print("Dashboard sync: off (SPACETIME_SYNC=0)")
     yield
+    if bridge:
+        bridge.stop(timeout=2)
 
 
 app = FastAPI(title="RecallAI", lifespan=lifespan)
 app.include_router(search_router)
 app.mount("/snapshots", StaticFiles(directory=str(SNAPSHOT_DIR)), name="snapshots")
+# The React dashboard's Vite dev server calls /api/* from another port.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class GPSData(BaseModel):
@@ -128,3 +149,10 @@ def dismiss_alert(alert_id: int):
     if cur.rowcount == 0:
         raise HTTPException(404, "No such alert")
     return {"status": "dismissed"}
+
+
+# ---------------------------------------------------------------------------
+# Built React dashboard at /app (mounted last so it never shadows a route)
+# ---------------------------------------------------------------------------
+if (WEB_DIST / "index.html").is_file():
+    app.mount("/app", StaticFiles(directory=str(WEB_DIST), html=True), name="app")

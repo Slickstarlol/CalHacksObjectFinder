@@ -58,7 +58,37 @@ YOLO confuses some classes (a gaming mouse up close came out as
 "cell phone"/"remote"), so a belonging is also checked against those related
 classes. See `CONFUSABLE_GROUPS` in `recognition.py`.
 
+## Live dashboard (SpacetimeDB)
+SQLite stays the main store; `spacetime_bridge.py` mirrors belongings, sightings
+and alerts into a SpacetimeDB database (`recallai`) so the React dashboard in
+`web/` updates live. Dismissing an alert in the dashboard is copied back to SQLite.
+**First time (Windows PowerShell):**
+```
+iwr https://windows.spacetimedb.com -useb | iex      # install SpacetimeDB, then open a new terminal
+cd spacetime;  npm install;  cd ..
+cd web;        npm install;  cd ..
+```
+**Every demo (4 terminals):**
+```
+spacetime start                                        # 1. database (port 3000)
+cd spacetime; spacetime publish --server local recallai   # 2. once per module change
+uvicorn server:app --host 0.0.0.0 --port 8000          # 3. API + bridge ("Dashboard sync: ...")
+python webcam.py                                       # 4. camera
+cd web; npm run dev                                    # dashboard: http://localhost:5173
+```
+Or `cd web; npm run build` once and use http://localhost:8000/app (no Vite needed).
+From a phone on the same Wi-Fi: http://<laptop-ip>:5173 (or :8000/app); the page
+connects to SpacetimeDB on the same laptop automatically.
+Reset everything: delete `memory.db`, then `spacetime publish --server local --delete-data=always recallai`
+(the bridge re-registers and resyncs by itself). One-off sync: `python spacetime_bridge.py --once`.
+
+Settings (env or `.env`): `SPACETIME_URL` (default `http://localhost:3000`),
+`SPACETIME_DB` (default `recallai`), `SPACETIME_SYNC=0` to turn the bridge off.
+The bridge's identity is saved in `.spacetime_token`; if the database was published
+by someone else, republish with `--delete-data` (or delete that file and republish).
+
 ## Files
+- `spacetime_bridge.py`: SQLite → SpacetimeDB mirror for the live dashboard
 - `webcam.py`: camera loop (YOLO, then recognition, then recorder)
 - `recognition.py`: "is it mine?" matcher (DINOv2 / CLIP / colour-histogram fallback)
 - `recorder.py`: decides what to save and when

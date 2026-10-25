@@ -9,5 +9,11 @@ belongings/*/embeddings_*.npz
 venv/
 .venv/
 
-# secrets (API keys)
+# secrets
 .env
+
+# SpacetimeDB dashboard
+.spacetime_token
+web/node_modules/
+web/dist/
+spacetime/node_modules/
