@@ -11,7 +11,7 @@ panel opens in your browser at http://127.0.0.1:8765:
 | 2 | SpacetimeDB | off | http://localhost:3000/v1/ping answers |
 | 3 | Publish SpacetimeDB module | off | `spacetime publish` exits OK |
 | 4 | RecallAI server | **on** | http://localhost:8000/api/belongings answers (a 401 "sign in required" counts: the server is up) |
-| 5 | Camera | **on** | still running after 20 s |
+| 5 | Camera | **on** | still running after 20 s (runs with `--no-window`: no OpenCV window, the live dashboard shows the feed) |
 | 6 | Live dashboard (SpacetimeDB) | **on** | http://localhost:5174 answers (opens in browser) |
 
 - Flip the switch on each step you want, then **Start all**. Steps start top to

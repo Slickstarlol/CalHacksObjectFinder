@@ -50,8 +50,8 @@
     {
       "id": "camera",
       "name": "Camera",
-      "description": "Webcam + YOLO + DINOv2 recognition. Opens its own video window (press Q there to quit).",
-      "command": ["{python}", "-m", "recallai.vision.webcam"],
+      "description": "Webcam + YOLO + DINOv2 recognition, without its own video window: watch it in the live dashboard. Stop it here.",
+      "command": ["{python}", "-m", "recallai.vision.webcam", "--no-window"],
       "cwd": ".",
       "enabled": true,
       "needs": ["python"],

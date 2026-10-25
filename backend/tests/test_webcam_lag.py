@@ -110,3 +110,53 @@ def test_worker_survives_errors_and_flushes_on_stop():
     w.submit(f, [], None, 1)   # pending when stop() is called
     w.stop()
     assert w.found == {"x": 1} and isinstance(w.error, RuntimeError)
+
+
+def test_no_window_runs_headless_and_stops_on_ctrl_c(monkeypatch):
+    """The launcher runs the camera with --no-window: frames still flow to the
+    dashboard, but no OpenCV window opens; Ctrl+C stops it cleanly."""
+    matcher = SimpleNamespace(belongings=[SimpleNamespace(name="My Mouse", category="mouse")],
+                              embedder=SimpleNamespace(name="fake"), threshold=0.7)
+    window_calls, published = [], []
+
+    class InterruptingCamera(FakeCamera):
+        def read(self):
+            if self.n == 20:
+                raise KeyboardInterrupt
+            return super().read()
+
+    class FakePublisher:
+        remote_enroll = None
+        belongings_version = None
+
+        def __init__(self, *a):
+            pass
+
+        def submit(self, frame, meta, enroll=None):
+            published.append(meta)
+
+        def take_people_jobs(self):
+            return []
+
+        def close(self):
+            published.append("closed")
+
+    monkeypatch.setattr(webcam, "BelongingMatcher", lambda *a, **k: matcher)
+    monkeypatch.setattr(webcam, "PeopleMatcher", lambda *a, **k: None)
+    monkeypatch.setattr(webcam, "load_embedder", lambda *a: None)
+    monkeypatch.setattr(webcam, "YOLO", FakeYOLO)
+    monkeypatch.setattr(webcam, "SightingRecorder", SlowRecorder)
+    monkeypatch.setattr(webcam, "Interpreter", lambda: SimpleNamespace(enabled=False, submit=None))
+    monkeypatch.setattr(webcam, "get_gps", lambda: None)
+    monkeypatch.setattr(webcam, "LivePublisher", FakePublisher)
+    monkeypatch.setattr(webcam, "PUBLISH_EVERY", 0)
+    monkeypatch.setattr(webcam.cv2, "VideoCapture", lambda *a: InterruptingCamera(60))
+    for fn in ("imshow", "waitKey", "destroyAllWindows"):
+        monkeypatch.setattr(webcam.cv2, fn, lambda *a, _fn=fn: window_calls.append(_fn) or 0)
+    monkeypatch.setattr(sys, "argv", ["webcam.py", "--no-window"])
+
+    webcam.main()                                   # returns instead of raising
+
+    assert window_calls == []
+    assert len([m for m in published if m != "closed"]) >= 30
+    assert published[-1] == "closed"

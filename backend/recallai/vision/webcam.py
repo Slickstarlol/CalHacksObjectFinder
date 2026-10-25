@@ -1,6 +1,8 @@
 """RecallAI live camera: watch for YOUR belongings and remember where they were.
 
-Run it with:  python -m recallai.vision.webcam  [--camera 0]
+Run it with:  python -m recallai.vision.webcam  [--camera 0] [--no-window]
+(--no-window: no OpenCV video window, e.g. from the launcher; the dashboard
+shows the live frame. Stop it with Ctrl+C.)
 Start the server first (python -m uvicorn recallai.api.server:app --port 8000)
 so the dashboard shows the live frame and phone GPS is attached (optional).
 
@@ -262,7 +264,11 @@ def main():
     parser.add_argument("--person-threshold", type=float, default=None,
                         help="how sure it must be to name a person (DINOv2 "
                              "default 0.75). Raise it if strangers get names.")
+    parser.add_argument("--no-window", action="store_true",
+                        help="don't open the video window (the dashboard shows the "
+                             "live frame); stop with Ctrl+C")
     args = parser.parse_args()
+    window = not args.no_window
 
     matcher = BelongingMatcher(load_embedder(args.embedder),
                                threshold=args.threshold)
@@ -390,7 +396,8 @@ def main():
             if dt > 0:
                 fps = 0.9 * fps + 0.1 * (1 / dt) if fps else 1 / dt
             _paint_fps(display, fps, strip)
-            cv2.imshow("RecallAI - Visual Memory", display)
+            if window:
+                cv2.imshow("RecallAI - Visual Memory", display)
 
             if now - last_publish >= PUBLISH_EVERY:
                 in_view = [{
@@ -424,13 +431,16 @@ def main():
                 }, enroll=guide.status() if enrolling else None)
                 last_publish = now
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            if window and cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+    except KeyboardInterrupt:   # Ctrl+C, the way to stop it with --no-window
+        print("Stopping the camera...")
     finally:
         publisher.close()
         camera.release()
         worker.stop()
-        cv2.destroyAllWindows()
+        if window:
+            cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
